@@ -1,0 +1,30 @@
+Name:                readpyc
+Version:             0.1
+Synopsis:            Read and pretty print Python bytecode (.pyc) files.
+Homepage:            
+License:             BSD3
+License-file:        ../LICENSE
+Author:              Bernie Pope
+Maintainer:          Bernie Pope <florbitous@gmail.com>
+Stability:           Experimental
+category:            Development
+Build-type:          Simple
+Cabal-version:       >=1.8
+Description:
+
+Executable readpyc {
+   main-is: Main.hs
+   hs-source-dirs: src
+   build-depends:
+      base==4.*,
+      bliplib,
+      parseargs
+}
+  --               binary,
+  --               mtl,
+  --               containers,
+  --               pretty,
+  --               filepath,
+  --               directory,
+  --               -- language-python==0.3.*,
+--}

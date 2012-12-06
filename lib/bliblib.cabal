@@ -1,0 +1,33 @@
+Name:                bliplib
+Version:             0.1
+Synopsis:            Support code for Blip.
+Homepage:            
+License:             BSD3
+License-file:        ../LICENSE
+Author:              Bernie Pope
+Maintainer:          Bernie Pope <florbitous@gmail.com>
+Stability:           Experimental
+category:            Development
+Build-type:          Simple
+Cabal-version:       >=1.8
+Description:
+
+Library {
+   hs-source-dirs: src
+   exposed-modules:
+      Blip.Bytecode,
+      Blip.Marshal,
+      Blip.Pretty,
+      Blip.Version
+   build-depends:
+      base==4.*,
+      binary,
+      mtl,
+      containers,
+      pretty,
+      filepath,
+      directory,
+      bytestring
+      -- language-python==0.3.*,
+      -- parseargs
+}
