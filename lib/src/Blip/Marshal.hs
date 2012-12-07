@@ -24,7 +24,7 @@ data PycFile =
    PycFile
    { magic :: Word32
    , modified_time :: Word32
-   , size :: Word32           -- XXX what does this measure?
+   , size :: Word32           -- the size in bytes of the original Python source
    , object :: PyObject
    }
    deriving Show
