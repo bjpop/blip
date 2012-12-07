@@ -12,6 +12,8 @@ import Compile (compileFile)
 import Blip.Marshal (writePyc)
 import Blip.Pretty (prettyString)
 
+progName = "blip"
+
 data ArgIndex
    = Help
    | InputFile
@@ -45,7 +47,7 @@ version =
    , argAbbr = Nothing
    , argName = Just "version"
    , argData = Nothing
-   , argDesc = "Show the version number of blip."
+   , argDesc = "Show the version number of " ++ progName ++ "."
    }
 
 getInputFile :: Args ArgIndex -> Maybe FilePath
@@ -59,18 +61,8 @@ main = do
       putStrLn $ argsUsage argMap
       exitWith ExitSuccess
    when (gotArg argMap Version) $ do
-      putStrLn $ "berp version " ++ versionString
+      putStrLn $ progName ++ " version " ++ versionString
       exitWith ExitSuccess
    case getInputFile argMap of
       Nothing -> return ()
       Just inFile -> compileFile inFile
-{-
-      Just inFile -> do
-         handle <- openFile inFile ReadMode
-         pycFile <- readPyc handle
-         putStrLn $ prettyString pycFile
-         hClose handle
-      -- let outFile = args !! 1
-      -- handle <- openFile outFile WriteMode
-      -- writePyc handle pycFile
--}
