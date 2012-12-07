@@ -25,9 +25,7 @@ Library {
       mtl,
       containers,
       pretty,
-      filepath,
-      directory,
       bytestring
-      -- language-python==0.3.*,
-      -- parseargs
+   other-modules:
+      Paths_bliplib
 }
