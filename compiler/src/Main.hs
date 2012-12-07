@@ -63,6 +63,8 @@ main = do
    when (gotArg argMap Version) $ do
       putStrLn $ progName ++ " version " ++ versionString
       exitWith ExitSuccess
+   -- XXX might as well support multiple input Python files.
+   -- They can be compiled in any order anyway.
    case getInputFile argMap of
       Nothing -> return ()
       Just inFile -> compileFile inFile

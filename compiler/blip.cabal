@@ -23,4 +23,5 @@ Executable blip {
      directory,
      filepath,
      parseargs
+     -- language-python
 }
