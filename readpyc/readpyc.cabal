@@ -20,11 +20,3 @@ Executable readpyc {
       bliplib,
       parseargs
 }
-  --               binary,
-  --               mtl,
-  --               containers,
-  --               pretty,
-  --               filepath,
-  --               directory,
-  --               -- language-python==0.3.*,
---}
