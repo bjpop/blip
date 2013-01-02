@@ -125,7 +125,7 @@ data Opcode
       as we want it to be available to both frameobject.c and ceval.c, while
       remaining private. -}
 
-   -- | EXCEPT_HANDLER        -- 257
+   {- EXCEPT_HANDLER        -- 257 -}
    deriving (Eq, Ord, Show)
 
 opcodeToWord8 :: Map.Map Opcode Word8
@@ -244,7 +244,7 @@ opcodeList = [
 
 data BytecodeArg
    = Arg16 Word16
-   -- | Arg32 Word32 etcetera
+   -- Arg32 Word32 etcetera
    deriving Show
 
 instance Pretty BytecodeArg where
