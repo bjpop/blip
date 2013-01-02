@@ -22,6 +22,7 @@ Executable blip {
      bliplib,
      directory,
      filepath,
-     parseargs
-     -- language-python
+     parseargs,
+     language-python==0.3.*,
+     mtl==2.1.*
 }

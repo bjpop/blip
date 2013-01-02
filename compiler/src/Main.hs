@@ -8,7 +8,7 @@ import System.Console.ParseArgs
    (Argtype (..), argDataOptional, argDataRequired, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
 import Blip.Version (versionString)
-import Compile (compileFile)
+import Compile (compileFile, CompileConfig (..))
 import Blip.Marshal (writePyc)
 import Blip.Pretty (prettyString)
 
@@ -18,6 +18,7 @@ data ArgIndex
    = Help
    | InputFile
    | Version
+   | MagicNumber
    deriving (Eq, Ord, Show)
 
 help :: Arg ArgIndex
@@ -50,12 +51,26 @@ version =
    , argDesc = "Show the version number of " ++ progName ++ "."
    }
 
+-- this works for CPython 3.3.0
+defaultMagicNumber :: Int
+defaultMagicNumber = 168627358
+
+magicNumberArg :: Arg ArgIndex
+magicNumberArg =
+   Arg
+   { argIndex = MagicNumber 
+   , argAbbr = Nothing
+   , argName = Just "magic"
+   , argData = argDataOptional "magic number" ArgtypeInt
+   , argDesc = "Magic number to include in pyc file header."
+   }
+
 getInputFile :: Args ArgIndex -> Maybe FilePath
 getInputFile argMap = getArg argMap InputFile 
 
 main :: IO ()
 main = do
-   let args = [version, help, inputFile]
+   let args = [version, help, magicNumberArg, inputFile]
    argMap <- parseArgsIO ArgsComplete args
    when (gotArg argMap Help) $ do
       putStrLn $ argsUsage argMap
@@ -67,4 +82,8 @@ main = do
    -- They can be compiled in any order anyway.
    case getInputFile argMap of
       Nothing -> return ()
-      Just inFile -> compileFile inFile
+      Just inFile -> do
+         let magicNumber = maybe defaultMagicNumber id $
+                              getArg argMap MagicNumber
+             config = CompileConfig { compileConfig_magic = fromIntegral magicNumber }
+         compileFile config inFile
