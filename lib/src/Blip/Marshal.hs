@@ -25,7 +25,7 @@ data PycFile =
    { magic :: Word32
    , modified_time :: Word32
    , size :: Word32           -- the size in bytes of the original Python source
-   , object :: PyObject
+   , object :: PyObject       -- a code object
    }
    deriving Show
 
