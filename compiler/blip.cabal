@@ -24,5 +24,7 @@ Executable blip {
      filepath,
      parseargs,
      language-python==0.3.*,
-     mtl==2.1.*
+     mtl==2.1.*,
+     containers==0.4.*,
+     bytestring==0.9.*
 }

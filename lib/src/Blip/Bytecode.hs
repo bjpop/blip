@@ -1,4 +1,4 @@
-module Blip.Bytecode ( decode, encode, Opcode (..), Bytecode (..), BytecodeSeq (..) ) where
+module Blip.Bytecode ( decode, encode, Opcode (..), Bytecode (..), BytecodeArg (..), BytecodeSeq (..) ) where
 
 import Data.Word ( Word64, Word8, Word16, Word32 )
 import Data.ByteString.Lazy as B 

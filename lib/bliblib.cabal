@@ -25,7 +25,8 @@ Library {
       mtl,
       containers,
       pretty,
-      bytestring
+      bytestring,
+      utf8-string==0.3.*
    other-modules:
       Paths_bliplib
 }

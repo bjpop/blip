@@ -9,6 +9,7 @@ import Control.Monad.Error (ErrorT (..), lift, replicateM)
 import System.IO (Handle)
 import qualified Data.ByteString.Lazy as B 
    (ByteString, hGetContents, empty, unpack, hPutStr, length)
+import Data.ByteString.Lazy.UTF8 as UTF8 (toString, fromString) 
 import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8)
 import Data.Binary.Put (Put, PutM, putWord32le, putLazyByteString, runPutM, putWord8)
 import Data.Int (Int64)
@@ -58,10 +59,10 @@ data PyObject
    | Tuple { elements :: [PyObject] }
    | Int { value :: Word32 }
    | None
-   | Unicode { unicode :: B.ByteString } -- should be decoded into a String
+   | Unicode { unicode :: String } -- should be decoded into a String
    | TrueObj
    | FalseObj
-   deriving Show
+   deriving (Eq, Ord, Show)
 
 instance Pretty PyObject where
    pretty (String {..}) = doubleQuotes $ pretty string
@@ -70,7 +71,7 @@ instance Pretty PyObject where
    pretty None = text "None"
    pretty TrueObj = text "True"
    pretty FalseObj = text "False"
-   pretty (Unicode {..}) = doubleQuotes $ pretty unicode
+   pretty (Unicode {..}) = doubleQuotes $ text unicode
    pretty (Code {..}) =
       text "argcount =" <+> pretty argcount $$
       text "kwonlyargcount =" <+> pretty kwonlyargcount $$
@@ -201,13 +202,15 @@ writeIntObject (Int {..}) =
 readUnicodeObject :: GetData PyObject
 readUnicodeObject = do
    len <- getU32
-   Unicode <$> (getBS $ fromIntegral len) -- XXX should be decoded into a String
+   bs <- getBS $ fromIntegral len
+   return $ Unicode $ UTF8.toString bs
 
 writeUnicodeObject :: PyObject -> PutData
-writeUnicodeObject (Unicode {..}) =
-   writeObjectType UNICODE >>
-   putU32 (fromIntegral $ B.length unicode) >>
-   putBS unicode
+writeUnicodeObject (Unicode {..}) = do
+   writeObjectType UNICODE
+   let uc = UTF8.fromString unicode 
+   putU32 (fromIntegral $ B.length uc)
+   putBS uc
 
 data ObjectType
    = NULL               -- '0'
