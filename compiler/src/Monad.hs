@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
-module Monad (Compile (..), runCompileMonad, setBlockState, getBlockState)  where
+module Monad (Compile (..), runCompileMonad)  where
 
 import Types (CompileState (..), BlockState (..))
 import Control.Monad.State.Strict as State hiding (State)
@@ -17,6 +17,7 @@ instance MonadState CompileState Compile where
 runCompileMonad :: Compile a -> CompileState -> IO a
 runCompileMonad (Compile comp) = evalStateT comp
 
+{-
 setBlockState :: BlockState -> Compile ()
 setBlockState blockState = do
    oldState <- get
@@ -24,3 +25,4 @@ setBlockState blockState = do
 
 getBlockState :: Compile BlockState
 getBlockState = gets state_blockState
+-}

@@ -2,12 +2,13 @@
 
 module StackDepth (maxStackDepth) where
  
-import Types (BlockID, BlockMap)
+import Utils (isJump)
+import Types (BlockID, BlockMap, BlockVal (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..))
 import Data.Word (Word32, Word16)
 import Control.Monad.RWS.Strict (RWS (..), runRWS, ask, local, gets, modify, when, unless)
 import qualified Data.Map as Map
-import qualified Data.Set as Set
+import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
 
 -- XXX should really type synonym for stack size Word32
@@ -27,6 +28,7 @@ data StackDepthState =
 
 type StackDepth = RWS BlockSeen () StackDepthState
 
+-- XXX need to handle the block next field
 maxStackDepth :: BlockID -> BlockMap -> Word32
 maxStackDepth blockID blockMap =
    stackDepth_maxDepth finalState
@@ -58,8 +60,9 @@ maxStackDepth blockID blockMap =
                      blockMap <- gets stackDepth_blockMap
                      case Map.lookup blockID blockMap of
                         Nothing -> return () -- XXX should this be an error?
-                        -- bytecodes are in reverse
-                        Just bytecodes -> maxStackDepthBytecodes depth $ reverse bytecodes 
+                        Just blockVal ->
+                           -- XXX handle block_next
+                           maxStackDepthBytecodes depth $ block_code blockVal 
    -- check if this block was seen at or above this depth previously.
    -- if not record this new depth as its start depth
    wasSeenDeeper :: BlockID -> Word32 -> StackDepth Bool
@@ -113,28 +116,6 @@ maxStackDepth blockID blockMap =
       let newDepth = depth + 3
       modify $ updateMaxDepth newDepth
       maxStackDepthM newDepth blockID
-
--- test if an opcode is a jump instruction
-isJump :: Opcode -> Bool
-isJump x = isRelativeJump x || isAbsoluteJump x
-
-isRelativeJump :: Opcode -> Bool
-isRelativeJump JUMP_FORWARD = True
-isRelativeJump SETUP_LOOP = True 
-isRelativeJump FOR_ITER = True 
-isRelativeJump SETUP_FINALLY = True 
-isRelativeJump SETUP_EXCEPT = True 
-isRelativeJump SETUP_WITH = True 
-isRelativeJump _ = False
-
-isAbsoluteJump :: Opcode -> Bool
-isAbsoluteJump POP_JUMP_IF_FALSE = True
-isAbsoluteJump POP_JUMP_IF_TRUE = True
-isAbsoluteJump JUMP_ABSOLUTE = True
-isAbsoluteJump CONTINUE_LOOP = True
-isAbsoluteJump JUMP_IF_FALSE_OR_POP = True
-isAbsoluteJump JUMP_IF_TRUE_OR_POP = True
-isAbsoluteJump _ = False
 
 -- Compute the effect of each opcode on the depth of the stack.
 -- This is used to compute an upper bound on the depth of the stack

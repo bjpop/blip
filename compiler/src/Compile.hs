@@ -3,11 +3,16 @@
 
 module Compile (compileFile, CompileConfig (..)) where
 
-import Monad (Compile (..), runCompileMonad, setBlockState, getBlockState)
+import State
+   (setBlockState, getBlockState, initBlockState, initState,
+    newBlock, useBlock, setNextBlock, emitCode, emitCodeArg, emitCodeNoArg,
+    compileName, compileConstant, reverseBlockMapBytecodes)
+import Assemble (assemble)
+import Monad (Compile (..), runCompileMonad)
 import StackDepth (maxStackDepth)
 import Types
    (Identifier, BlockID, BlockMap, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..))
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..), BlockVal (..))
 import Scope (Scope (..), empty )
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -25,6 +30,7 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
 
+{-
 initBlockState :: BlockState
 initBlockState = BlockState
    { state_blockMap = Map.empty
@@ -47,7 +53,7 @@ newBlock = do
    blockState <- getBlockState
    let blockID = state_nextBlockID blockState
        oldBlockMap = state_blockMap blockState
-       newBlockMap = Map.insert blockID [] oldBlockMap
+       newBlockMap = Map.insert blockID ([], Nothing) oldBlockMap
        newBlockState = blockState 
                        { state_blockMap = newBlockMap
                        , state_nextBlockID = blockID + 1
@@ -59,6 +65,10 @@ useBlock :: BlockID -> Compile ()
 useBlock blockID = do
    blockState <- getBlockState
    setBlockState $ blockState { state_currentBlockID = blockID }
+
+-- same as compiler_use_next_block
+setNextBlock :: BlockID -> Compile ()
+setNextBlock nextBlockID = undefined
 
 emitCodeArg :: Opcode -> Word16 -> Compile ()
 emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)
@@ -73,9 +83,14 @@ emitCode bytecode = do
    blockState <- getBlockState
    let blockMap = state_blockMap blockState
        currentBlock = state_currentBlockID blockState
-       newBlockMap = Map.insertWith' (++) currentBlock [bytecode] blockMap
+       newBlockMap = Map.insertWith' addInstruction currentBlock ([bytecode], Nothing) blockMap
    setBlockState $ blockState { state_blockMap = newBlockMap }
+   where
+   addInstruction :: BlockVal -> BlockVal -> BlockVal 
+   addInstruction (oldCode, oldNext) (newCode, _) = (newCode ++ oldCode, oldNext)
+-}
 
+{-
 compileName :: Identifier -> Compile NameID
 compileName ident = do
    blockState <- getBlockState
@@ -100,6 +115,7 @@ compileConstant obj = do
             { state_nextConstantID = constantID + 1, state_constants = newConstants }
          return constantID
       Just constantID -> return constantID
+-}
 
 compileFile :: CompileConfig -> FilePath -> IO ()
 compileFile config path = do
@@ -159,19 +175,15 @@ instance Compilable Body where
       setBlockState initBlockState
       Traversable.mapM compile stmts
       returnNone
-      state <- getBlockState
-      let blockMap = state_blockMap state
+      state <- getBlockState id
+      -- The bytecodes are in reverse order after compiling a block
+      let blockMapRev = state_blockMap state
+          -- Put the bytecodes in the correct order
+          blockMap = reverseBlockMapBytecodes blockMapRev 
           code = assemble blockMap
           stackDepth = maxStackDepth 0 blockMap
       makeObject (state_names state) (state_constants state)
                  code stackDepth
-
--- XXX fixme
-assemble :: BlockMap -> [Bytecode]
-assemble blockMap =
-   case Map.lookup 0 blockMap of
-      Just code -> reverse code
-      Nothing -> []
 
 makeObject :: NameMap -> ConstantMap -> [Bytecode] -> Word32 -> Compile PyObject
 makeObject names constants code maxStackDepth = do
