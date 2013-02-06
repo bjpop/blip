@@ -21,6 +21,7 @@ import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
    (ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..))
+import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime)
 import System.Time (ClockTime (..))
@@ -33,7 +34,7 @@ import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
 import Control.Monad (unless)
 import Control.Exception (try)
-import System.IO.Error (IOError)
+import System.IO.Error (IOError, userError, ioError)
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile
@@ -65,7 +66,8 @@ compileFile config path = do
 parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
 parseAndCheckErrors fileContents sourceName =
    case parseModule fileContents sourceName of
-      Left e -> error $ show e
+      -- Left e -> ioError $ userError $ show e
+      Left e -> error $ "parse error: " ++ prettyText e
       Right (pyModule, _comments) -> return pyModule
 
 compileModule :: CompileConfig -> Word32 -> Word32 -> ModuleSpan -> IO PycFile
