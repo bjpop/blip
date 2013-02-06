@@ -3,6 +3,7 @@
 
 module Compile (compileFile, CompileConfig (..)) where
 
+import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
     newBlock, useBlock, setNextBlock, emitCode, emitCodeArg, emitCodeNoArg,
@@ -31,6 +32,8 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
 import Control.Monad (unless)
+import Control.Exception (try)
+import System.IO.Error (IOError)
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile
@@ -41,21 +44,23 @@ class Compilable a where
 
 compileFile :: CompileConfig -> FilePath -> IO ()
 compileFile config path = do
-   fileExists <- doesFileExist path
-   if not fileExists
-      then error $ "Python source file not found: " ++ path
-      else do
-         modifiedTime <- getModificationTime path -- XXX this might fail if we don't have permission
-         let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
-         pyHandle <- openFile path ReadMode
-         sizeInBytes <- hFileSize pyHandle
-         fileContents <- hGetContents pyHandle
-         pyModule <- parseAndCheckErrors fileContents path
-         pyc <- compileModule config (fromIntegral modSeconds) (fromIntegral sizeInBytes) pyModule
-         let pycFilePath = takeBaseName path <.> ".pyc"
-         pycHandle <- openFile pycFilePath WriteMode 
-         writePyc pycHandle pyc
-         hClose pycHandle
+   r <- try $ do
+      pyHandle <- openFile path ReadMode
+      sizeInBytes <- hFileSize pyHandle
+      fileContents <- hGetContents pyHandle
+      modifiedTime <- getModificationTime path
+      let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
+      pyModule <- parseAndCheckErrors fileContents path
+      pyc <- compileModule config (fromIntegral modSeconds) (fromIntegral sizeInBytes) pyModule
+      let pycFilePath = takeBaseName path <.> ".pyc"
+      pycHandle <- openFile pycFilePath WriteMode 
+      writePyc pycHandle pyc
+      hClose pycHandle
+   -- XXX maybe we want more customised error messages for different kinds of
+   -- IOErrors?
+   case r of
+      Left e -> putStrLn $ progName ++ ": " ++ show (e :: IOError)
+      Right () -> return ()
 
 parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
 parseAndCheckErrors fileContents sourceName =

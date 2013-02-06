@@ -11,8 +11,7 @@ import Blip.Version (versionString)
 import Compile (compileFile, CompileConfig (..))
 import Blip.Marshal (writePyc)
 import Blip.Pretty (prettyString)
-
-progName = "blip"
+import ProgName (progName)
 
 data ArgIndex
    = Help
