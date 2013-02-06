@@ -68,6 +68,10 @@ magicNumberArg =
 getInputFile :: Args ArgIndex -> Maybe FilePath
 getInputFile argMap = getArg argMap InputFile 
 
+initCompileConfig :: CompileConfig
+initCompileConfig =
+   CompileConfig { compileConfig_magic = 0 }
+
 main :: IO ()
 main = do
    let args = [version, help, magicNumberArg, inputFile]
@@ -85,5 +89,5 @@ main = do
       Just inFile -> do
          let magicNumber = maybe defaultMagicNumber id $
                               getArg argMap MagicNumber
-             config = CompileConfig { compileConfig_magic = fromIntegral magicNumber }
+             config = initCompileConfig { compileConfig_magic = fromIntegral magicNumber }
          compileFile config inFile

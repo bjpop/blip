@@ -21,131 +21,16 @@ import Language.Python.Common.AST as AST
    (ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..))
 import System.FilePath ((<.>), takeBaseName)
-import System.Directory (doesFileExist)
-import System.IO (openFile, IOMode(..), Handle, hClose)
+import System.Directory (doesFileExist, getModificationTime)
+import System.Time (ClockTime (..))
+import System.IO (openFile, IOMode(..), Handle, hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
 import Data.Traversable as Traversable (mapM)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
-
-{-
-initBlockState :: BlockState
-initBlockState = BlockState
-   { state_blockMap = Map.empty
-   , state_nextBlockID = 0
-   , state_currentBlockID = 0
-   , state_constants = Map.empty
-   , state_nextConstantID = 0
-   , state_names = Map.empty
-   , state_nextNameID = 0
-   }
-
-initState :: CompileConfig -> CompileState
-initState config = CompileState
-   { state_config = config
-   , state_blockState = initBlockState
-   }
-
-newBlock :: Compile BlockID
-newBlock = do
-   blockState <- getBlockState
-   let blockID = state_nextBlockID blockState
-       oldBlockMap = state_blockMap blockState
-       newBlockMap = Map.insert blockID ([], Nothing) oldBlockMap
-       newBlockState = blockState 
-                       { state_blockMap = newBlockMap
-                       , state_nextBlockID = blockID + 1
-                       }
-   setBlockState newBlockState
-   return blockID
-
-useBlock :: BlockID -> Compile ()
-useBlock blockID = do
-   blockState <- getBlockState
-   setBlockState $ blockState { state_currentBlockID = blockID }
-
--- same as compiler_use_next_block
-setNextBlock :: BlockID -> Compile ()
-setNextBlock nextBlockID = undefined
-
-emitCodeArg :: Opcode -> Word16 -> Compile ()
-emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)
-
-emitCodeNoArg :: Opcode -> Compile ()
-emitCodeNoArg opCode = emitCode $ Bytecode opCode Nothing
-
--- XXX this might be a bit slow, maybe we should cache the current
--- block in the compiler state, so we don't have to look it up all the time
-emitCode :: Bytecode -> Compile ()
-emitCode bytecode = do
-   blockState <- getBlockState
-   let blockMap = state_blockMap blockState
-       currentBlock = state_currentBlockID blockState
-       newBlockMap = Map.insertWith' addInstruction currentBlock ([bytecode], Nothing) blockMap
-   setBlockState $ blockState { state_blockMap = newBlockMap }
-   where
-   addInstruction :: BlockVal -> BlockVal -> BlockVal 
-   addInstruction (oldCode, oldNext) (newCode, _) = (newCode ++ oldCode, oldNext)
--}
-
-{-
-compileName :: Identifier -> Compile NameID
-compileName ident = do
-   blockState <- getBlockState
-   let nameMap = state_names blockState
-   case Map.lookup ident nameMap of
-      Nothing -> do
-         let nameID = state_nextNameID blockState
-             newNames = Map.insert ident nameID nameMap
-         setBlockState $ blockState { state_nextNameID = nameID + 1, state_names = newNames }
-         return nameID
-      Just nameID -> return nameID
-
-compileConstant :: PyObject -> Compile ConstantID 
-compileConstant obj = do
-   blockState <- getBlockState
-   let constantMap = state_constants blockState
-   case Map.lookup obj constantMap of
-      Nothing -> do
-         let constantID = state_nextConstantID blockState
-             newConstants = Map.insert obj constantID constantMap
-         setBlockState $ blockState 
-            { state_nextConstantID = constantID + 1, state_constants = newConstants }
-         return constantID
-      Just constantID -> return constantID
--}
-
-compileFile :: CompileConfig -> FilePath -> IO ()
-compileFile config path = do
-   fileExists <- doesFileExist path
-   if not fileExists
-      then error $ "Python source file not found: " ++ path
-      else do
-         fileContents <- readFile path
-         pyModule <- parseAndCheckErrors fileContents path
-         pyc <- compileModule config pyModule
-         let pycFilePath = takeBaseName path <.> ".pyc"
-         handle <- openFile pycFilePath WriteMode 
-         writePyc handle pyc
-         hClose handle
-
-parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
-parseAndCheckErrors fileContents sourceName =
-   case parseModule fileContents sourceName of
-      Left e -> error $ show e
-      Right (pyModule, _comments) -> return pyModule
-
-compileModule :: CompileConfig -> ModuleSpan -> IO PycFile
-compileModule config mod = do
-   let state = initState config 
-   obj <- compiler mod state
-   return $ PycFile
-      { magic = compileConfig_magic config 
-      , modified_time = 12345
-      , size = 10
-      , object = obj }
+import Control.Monad (unless)
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile
@@ -153,6 +38,40 @@ compiler = runCompileMonad . compile
 class Compilable a where
    type CompileResult a :: *
    compile :: a -> Compile (CompileResult a)
+
+compileFile :: CompileConfig -> FilePath -> IO ()
+compileFile config path = do
+   fileExists <- doesFileExist path
+   if not fileExists
+      then error $ "Python source file not found: " ++ path
+      else do
+         modifiedTime <- getModificationTime path -- XXX this might fail if we don't have permission
+         let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
+         pyHandle <- openFile path ReadMode
+         sizeInBytes <- hFileSize pyHandle
+         fileContents <- hGetContents pyHandle
+         pyModule <- parseAndCheckErrors fileContents path
+         pyc <- compileModule config (fromIntegral modSeconds) (fromIntegral sizeInBytes) pyModule
+         let pycFilePath = takeBaseName path <.> ".pyc"
+         pycHandle <- openFile pycFilePath WriteMode 
+         writePyc pycHandle pyc
+         hClose pycHandle
+
+parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
+parseAndCheckErrors fileContents sourceName =
+   case parseModule fileContents sourceName of
+      Left e -> error $ show e
+      Right (pyModule, _comments) -> return pyModule
+
+compileModule :: CompileConfig -> Word32 -> Word32 -> ModuleSpan -> IO PycFile
+compileModule config pyFileModifiedTime pyFileSizeBytes mod = do
+   let state = initState config 
+   obj <- compiler mod state
+   return $ PycFile
+      { magic = compileConfig_magic config 
+      , modified_time = pyFileModifiedTime 
+      , size = pyFileSizeBytes
+      , object = obj }
 
 instance Compilable a => Compilable [a] where
    type CompileResult [a] = [CompileResult a]
@@ -174,6 +93,7 @@ instance Compilable Body where
    compile (Body stmts) = do
       setBlockState initBlockState
       Traversable.mapM compile stmts
+      -- XXX should avoid returning None if a return statement preceeds it in the current block
       returnNone
       state <- getBlockState id
       -- The bytecodes are in reverse order after compiling a block
@@ -184,6 +104,53 @@ instance Compilable Body where
           stackDepth = maxStackDepth 0 blockMap
       makeObject (state_names state) (state_constants state)
                  code stackDepth
+
+instance Compilable StatementSpan where
+   type CompileResult StatementSpan = ()
+   -- XXX fix multiple assignment
+   compile (Assign [Var ident _] e _) = do
+      compile e
+      nameID <- compileName $ ident_string ident
+      emitCodeArg STORE_NAME nameID
+   -- XXX should check if return statement is inside a function body
+   compile (Return { return_expr = Nothing }) = returnNone
+   compile (Return { return_expr = Just expr }) = 
+      compile expr >> emitCodeNoArg RETURN_VALUE
+   compile (Pass {}) = return ()
+   -- Don't emit code for pure expressions, as statements they have no
+   -- observable effect.
+   compile (StmtExpr { stmt_expr = expr }) = do
+      unless (isPureExpr expr) $ 
+         compile expr >> emitCodeNoArg POP_TOP
+   compile s = error ("Unsupported statement " ++ show s)
+
+instance Compilable ExprSpan where
+   type CompileResult ExprSpan = ()
+   compile (AST.Int {..}) =
+      compileConstant $ Blip.Int $ fromIntegral int_value
+   compile (AST.None {}) = compileConstant Blip.None
+   compile (Paren { paren_expr = expr }) = compile expr
+
+-- True if evaluating an expression has no observable side effect
+-- Raising an exception is a side-effect, so variables are not pure.
+isPureExpr :: ExprSpan -> Bool
+isPureExpr (AST.Int {}) = True
+isPureExpr (AST.LongInt {}) = True
+isPureExpr (AST.Float {}) = True
+isPureExpr (AST.Imaginary {}) = True
+isPureExpr (AST.Bool {}) = True
+isPureExpr (AST.None {}) = True
+isPureExpr (AST.ByteStrings {}) = True
+isPureExpr (AST.Strings {}) = True
+isPureExpr (AST.UnicodeStrings {}) = True
+isPureExpr (AST.Tuple { tuple_exprs = exprs }) = all isPureExpr exprs 
+isPureExpr (AST.List { list_exprs = exprs }) = all isPureExpr exprs 
+isPureExpr (AST.Set { set_exprs = exprs }) = all isPureExpr exprs 
+isPureExpr (AST.Paren { paren_expr = expr }) = isPureExpr expr
+isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
+   all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
+-- XXX what about Lambda?
+isPureExpr other = False
 
 makeObject :: NameMap -> ConstantMap -> [Bytecode] -> Word32 -> Compile PyObject
 makeObject names constants code maxStackDepth = do
@@ -223,24 +190,5 @@ mapToObject theMap keyToObj =
    theObjects = map snd $ sort $ 
       [(identity, keyToObj key) | (key, identity) <- Map.toList theMap]
 
-instance Compilable StatementSpan where
-   type CompileResult StatementSpan = ()
-   -- XXX fix multiple assignment
-   compile (Assign [Var ident _] e _) = do
-      compile e
-      nameID <- compileName $ ident_string ident
-      emitCodeArg STORE_NAME nameID
-   compile s = error ("Unsupported statement " ++ show s)
-
-instance Compilable ExprSpan where
-   type CompileResult ExprSpan = ()
-   compile (AST.Int {..}) = do
-       -- XXX should check for overflow
-       constID <- compileConstant (Blip.Int $ fromIntegral int_value)
-       emitCodeArg LOAD_CONST constID
-
 returnNone :: Compile ()
-returnNone = do
-   constID <- compileConstant Blip.None
-   emitCodeArg LOAD_CONST constID
-   emitCodeNoArg RETURN_VALUE
+returnNone = compileConstant Blip.None >> emitCodeNoArg RETURN_VALUE

@@ -146,15 +146,17 @@ compileName ident = do
          return nameID
       Just nameID -> return nameID
 
-compileConstant :: PyObject -> Compile ConstantID 
+compileConstant :: PyObject -> Compile ()
 compileConstant obj = do
    blockState <- getBlockState id
    let constantMap = state_constants blockState
-   case Map.lookup obj constantMap of
-      Nothing -> do
-         let constantID = state_nextConstantID blockState
-             newConstants = Map.insert obj constantID constantMap
-         setBlockState $ blockState
-            { state_nextConstantID = constantID + 1, state_constants = newConstants }
-         return constantID
-      Just constantID -> return constantID
+   constID <-
+      case Map.lookup obj constantMap of
+         Nothing -> do
+            let constantID = state_nextConstantID blockState
+                newConstants = Map.insert obj constantID constantMap
+            setBlockState $ blockState
+               { state_nextConstantID = constantID + 1, state_constants = newConstants }
+            return constantID
+         Just constantID -> return constantID
+   emitCodeArg LOAD_CONST constID
