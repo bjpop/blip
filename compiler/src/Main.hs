@@ -1,9 +1,9 @@
 module Main where
 
-import System.Exit (ExitCode (..), exitWith, exitFailure)
+import System.Exit (exitFailure, exitSuccess)
 import System.Environment (getArgs)
 import System.IO (openFile, IOMode(..), Handle, hClose)
-import Control.Monad (when)
+import Control.Monad (when, forM_)
 import System.Console.ParseArgs
    (Argtype (..), argDataOptional, argDataRequired, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
@@ -65,7 +65,11 @@ magicNumberArg =
    }
 
 getInputFile :: Args ArgIndex -> Maybe FilePath
-getInputFile argMap = getArg argMap InputFile 
+getInputFile args = getArg args InputFile 
+
+getMagicNumber :: Args ArgIndex -> Int
+getMagicNumber args = 
+   maybe defaultMagicNumber id $ getArg args MagicNumber
 
 initCompileConfig :: CompileConfig
 initCompileConfig =
@@ -73,20 +77,21 @@ initCompileConfig =
 
 main :: IO ()
 main = do
-   let args = [version, help, magicNumberArg, inputFile]
-   argMap <- parseArgsIO ArgsComplete args
-   when (gotArg argMap Help) $ do
-      putStrLn $ argsUsage argMap
-      exitWith ExitSuccess
-   when (gotArg argMap Version) $ do
+   let argDescriptions = [version, help, magicNumberArg]
+   args <- parseArgsIO (ArgsTrailing "PYTHON_FILES") argDescriptions
+   when (gotArg args Help) $ do
+      putStrLn $ argsUsage args
+      exitSuccess
+   when (gotArg args Version) $ do
       putStrLn $ progName ++ " version " ++ versionString
-      exitWith ExitSuccess
-   -- XXX might as well support multiple input Python files.
-   -- They can be compiled in any order anyway.
-   case getInputFile argMap of
-      Nothing -> return ()
-      Just inFile -> do
-         let magicNumber = maybe defaultMagicNumber id $
-                              getArg argMap MagicNumber
-             config = initCompileConfig { compileConfig_magic = fromIntegral magicNumber }
-         compileFile config inFile
+      exitSuccess
+   let pythonFiles = argsRest args
+   when (null pythonFiles) $ do
+      putStrLn $ progName ++ ": no Python input files specified"
+      putStrLn $ argsUsage args
+      exitFailure 
+   forM_ pythonFiles $ \pyFile -> do
+      let magicNumber = getMagicNumber args
+          config = initCompileConfig 
+                        { compileConfig_magic = fromIntegral magicNumber }
+      compileFile config pyFile 
