@@ -1,7 +1,7 @@
 module State
    (setBlockState, getBlockState, initBlockState, initState, 
     newBlock, useBlock, setNextBlock, emitCode, emitCodeArg, emitCodeNoArg,
-    compileName, compileConstant, reverseBlockMapBytecodes)
+    compileName, compileConstant, reverseBlockMapBytecodes, getFileName)
    where
 
 import Monad (Compile (..))
@@ -27,11 +27,15 @@ initBlockState = BlockState
    , state_nextNameID = 0
    }
 
-initState :: CompileConfig -> CompileState
-initState config = CompileState
+initState :: CompileConfig -> FilePath -> CompileState
+initState config pyFilename = CompileState
    { state_config = config
    , state_blockState = initBlockState
+   , state_filename = pyFilename
    }
+
+getFileName :: Compile FilePath
+getFileName = gets state_filename
 
 -- After compiling a Block the bytecodes are in reverse order.
 -- This function puts them back in the correct order.

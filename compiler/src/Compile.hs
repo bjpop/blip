@@ -7,7 +7,7 @@ import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
     newBlock, useBlock, setNextBlock, emitCode, emitCodeArg, emitCodeNoArg,
-    compileName, compileConstant, reverseBlockMapBytecodes)
+    compileName, compileConstant, reverseBlockMapBytecodes, getFileName)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import StackDepth (maxStackDepth)
@@ -23,7 +23,7 @@ import Language.Python.Common.AST as AST
    , ExprSpan (..), Expr (..), Ident (..))
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
-import System.Directory (doesFileExist, getModificationTime)
+import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
 import System.Time (ClockTime (..))
 import System.IO (openFile, IOMode(..), Handle, hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
@@ -52,7 +52,8 @@ compileFile config path = do
       modifiedTime <- getModificationTime path
       let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
       pyModule <- parseAndCheckErrors fileContents path
-      pyc <- compileModule config (fromIntegral modSeconds) (fromIntegral sizeInBytes) pyModule
+      pyc <- compileModule config (fromIntegral modSeconds)
+                (fromIntegral sizeInBytes) path pyModule
       let pycFilePath = takeBaseName path <.> ".pyc"
       pycHandle <- openFile pycFilePath WriteMode 
       writePyc pycHandle pyc
@@ -66,13 +67,13 @@ compileFile config path = do
 parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
 parseAndCheckErrors fileContents sourceName =
    case parseModule fileContents sourceName of
-      -- Left e -> ioError $ userError $ show e
       Left e -> error $ "parse error: " ++ prettyText e
       Right (pyModule, _comments) -> return pyModule
 
-compileModule :: CompileConfig -> Word32 -> Word32 -> ModuleSpan -> IO PycFile
-compileModule config pyFileModifiedTime pyFileSizeBytes mod = do
-   let state = initState config 
+compileModule :: CompileConfig -> Word32 -> Word32 -> FilePath -> ModuleSpan -> IO PycFile
+compileModule config pyFileModifiedTime pyFileSizeBytes pyFileName mod = do
+   canonicalPath <- canonicalizePath pyFileName
+   let state = initState config canonicalPath
    obj <- compiler mod state
    return $ PycFile
       { magic = compileConfig_magic config 
@@ -165,6 +166,7 @@ makeObject names constants code maxStackDepth = do
       -- XXX make a better error message
       then error "Maximum stack depth exceeded"
       else do
+         pyFileName <- getFileName
          let obj = Code
                    { argcount = 0
                    , kwonlyargcount = 0
@@ -177,7 +179,7 @@ makeObject names constants code maxStackDepth = do
                    , varnames = Blip.Tuple []
                    , freevars = Blip.Tuple [] 
                    , cellvars = Blip.Tuple []
-                   , filename = Unicode "somefile"
+                   , filename = Unicode pyFileName
                    , name = Unicode "somename"
                    , firstlineno = 0
                    , lnotab = String B.empty

@@ -36,6 +36,7 @@ type ConstantMap = Map.Map PyObject ConstantID
 data CompileState = CompileState
    { state_config :: CompileConfig
    , state_blockState :: BlockState
+   , state_filename :: FilePath
    }
 
 data BlockState = BlockState 
