@@ -3,14 +3,23 @@
 module Assemble (assemble) where
  
 import Utils (isJump)
-import Types (BlockID, BlockMap, BlockVal (..))
+import Types (BlockState (..), Labelled (..))
+import State (getBlockState)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..))
-import Data.Word (Word32, Word16)
-import Control.Monad.State.Strict (State(..), execState, gets, put, when, modify)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import Data.List as List (foldl')
+import Monad (Compile (..))
+-- import Data.Word (Word32, Word16)
 
+unlabel :: Labelled a -> a
+unlabel (Labelled x _) = x
+unlabel (UnLabelled x) = x
+
+-- XXX this is incorrect, needs to calculate offsets for labels
+assemble :: Compile [Bytecode]
+assemble = do
+   labelledCode <- getBlockState state_instructions
+   return $ map unlabel $ reverse labelledCode
+
+{-
 -- Blocks we've already seen in a depth-first path in the control flow graph
 type BlockSeen = Set.Set BlockID
 type BlockSequence = [(BlockID, [Bytecode])]
@@ -83,3 +92,4 @@ assembleSequence jumpMap ((_blockID, bytecode) : rest)
       case Map.lookup oparg jumpMap of
          Nothing -> error "jump target not known"
          Just offset -> Bytecode { opcode = opcode, args = Just (Arg16 offset) }
+-}

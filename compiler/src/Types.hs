@@ -1,6 +1,6 @@
 module Types 
-   (Identifier, BlockID, BlockMap, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), BlockVal (..)) where
+   (Identifier, CompileConfig (..), NameID, NameMap
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..), Labelled (..)) where
 
 import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
@@ -8,18 +8,11 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-type Identifier = String -- a variable name
+data Labelled a =
+   Labelled a Word16 | UnLabelled a
+   deriving (Eq, Show)
 
--- this limits us to 2**16 blocks == 65536 blocks, is that too small?
-type BlockID = Word16 
--- type BlockMap = Map.Map BlockID [Bytecode]
-data BlockVal =
-   BlockVal
-   { block_code :: [Bytecode]      -- the byte code of the block
-   , block_next :: Maybe BlockID   -- possibly jump to a following block
-   }
-   deriving (Show)
-type BlockMap = Map.Map BlockID BlockVal
+type Identifier = String -- a variable name
 
 data CompileConfig =
    CompileConfig
@@ -40,9 +33,9 @@ data CompileState = CompileState
    }
 
 data BlockState = BlockState 
-   { state_blockMap :: BlockMap
-   , state_nextBlockID :: !BlockID
-   , state_currentBlockID :: BlockID
+   { state_label :: !Word16
+   , state_instructions :: [Labelled Bytecode]
+   , state_labelNextInstruction :: !(Maybe Word16) -- maybe label the next emitted instruction
    , state_constants :: ConstantMap
    , state_nextConstantID :: !ConstantID
    , state_names :: NameMap

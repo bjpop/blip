@@ -6,14 +6,12 @@ module Compile (compileFile, CompileConfig (..)) where
 import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
-    newBlock, useBlock, setNextBlock, emitCode, emitCodeArg, emitCodeNoArg,
-    compileName, compileConstant, reverseBlockMapBytecodes, getFileName)
+    emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit, getFileName, newLabel)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
-import StackDepth (maxStackDepth)
 import Types
-   (Identifier, BlockID, BlockMap, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), BlockVal (..))
+   (Identifier, CompileConfig (..), NameID, NameMap
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..), Labelled (..))
 import Scope (Scope (..), empty )
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -100,19 +98,34 @@ instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
       setBlockState initBlockState
-      Traversable.mapM compile stmts
-      -- XXX should avoid returning None if a return statement preceeds it in the current block
-      returnNone
+      -- Traversable.mapM compile stmts
+      compileBodyStmts stmts
       state <- getBlockState id
-      -- The bytecodes are in reverse order after compiling a block
-      let blockMapRev = state_blockMap state
-          -- Put the bytecodes in the correct order
-          blockMap = reverseBlockMapBytecodes blockMapRev 
-          code = assemble blockMap
-          stackDepth = maxStackDepth 0 blockMap
+      code <- assemble
+      -- let code = []
+      let stackDepth = 10
       makeObject (state_names state) (state_constants state)
                  code stackDepth
 
+compileBodyStmts :: [StatementSpan] -> Compile ()
+compileBodyStmts [] = returnNone
+compileBodyStmts (s:ss) = do
+   case s of
+      Assign [Var ident _] e _ -> do
+         compile e
+         nameID <- compileName $ ident_string ident
+         emitCodeArg STORE_NAME nameID
+      Return { return_expr = Nothing } -> returnNone
+      Return { return_expr = Just expr } ->
+         compile expr >> emitCodeNoArg RETURN_VALUE
+      Pass {} -> return ()
+      StmtExpr { stmt_expr = expr } -> 
+         unless (isPureExpr expr) $ 
+            compile expr >> emitCodeNoArg POP_TOP
+      _other -> error ("Unsupported statement " ++ show s) 
+   compileBodyStmts ss
+
+{-
 instance Compilable StatementSpan where
    type CompileResult StatementSpan = ()
    -- XXX fix multiple assignment
@@ -131,12 +144,14 @@ instance Compilable StatementSpan where
       unless (isPureExpr expr) $ 
          compile expr >> emitCodeNoArg POP_TOP
    compile s = error ("Unsupported statement " ++ show s)
+-}
 
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
    compile (AST.Int {..}) =
-      compileConstant $ Blip.Int $ fromIntegral int_value
-   compile (AST.None {}) = compileConstant Blip.None
+      compileConstantEmit $ Blip.Int $ fromIntegral int_value
+   compile (AST.None {}) = do
+      compileConstantEmit Blip.None
    compile (Paren { paren_expr = expr }) = compile expr
 
 -- True if evaluating an expression has no observable side effect
@@ -200,4 +215,4 @@ mapToObject theMap keyToObj =
       [(identity, keyToObj key) | (key, identity) <- Map.toList theMap]
 
 returnNone :: Compile ()
-returnNone = compileConstant Blip.None >> emitCodeNoArg RETURN_VALUE
+returnNone = compileConstantEmit Blip.None >> emitCodeNoArg RETURN_VALUE
