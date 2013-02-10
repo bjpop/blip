@@ -28,7 +28,10 @@ data StackDepthState =
 
 type StackDepth = RWS BlockSeen () StackDepthState
 
--- XXX need to handle the block next field
+-- This function plays the same role as stackdepth and stackdepth_walk from
+-- CPython compile.c
+-- XXX This code is more complex than it ought to be. A clean solution needs
+-- a nicer representation of the control flow graph.
 maxStackDepth :: BlockID -> BlockMap -> Word32
 maxStackDepth blockID blockMap =
    stackDepth_maxDepth finalState
@@ -50,8 +53,13 @@ maxStackDepth blockID blockMap =
          then return ()
          -- we haven't seen this block in this path, keep going
          else do
+            -- check if we previously saw this block at a deeper start depth
             wasDeeper <- wasSeenDeeper blockID depth
             if wasDeeper
+               -- we saw this block at a deeper depth already, the current
+               -- path can't go any deeper, so don't process it again
+               -- (optimisation to avoid redundantly following paths that
+               -- can't change the result)
                then return ()
                else
                   -- we haven't seen this block before in this path,
@@ -60,11 +68,22 @@ maxStackDepth blockID blockMap =
                      blockMap <- gets stackDepth_blockMap
                      case Map.lookup blockID blockMap of
                         Nothing -> return () -- XXX should this be an error?
-                        Just blockVal ->
-                           -- XXX handle block_next
-                           maxStackDepthBytecodes depth $ block_code blockVal 
+                        Just blockVal -> do
+                           -- compute max stack depth of the bytecodes in this block
+                           -- and any blocks jumped to by the bytecode.
+                           maybeDepth <- maxStackDepthBytecodes depth $ block_code blockVal 
+                           -- handle the next block
+                           case maybeDepth of
+                              -- remaining code is dead due to previous Jump op
+                              -- see "goto out" in stackdepth_walk in CPython stackdepth_walk
+                              Nothing -> return ()
+                              Just nextDepth ->
+                                 case block_next blockVal of
+                                    -- no next block
+                                    Nothing -> return ()
+                                    Just nextBlockID -> maxStackDepthM nextDepth nextBlockID
    -- check if this block was seen at or above this depth previously.
-   -- if not record this new depth as its start depth
+   -- if not, record this new depth as its start depth
    wasSeenDeeper :: BlockID -> Word32 -> StackDepth Bool
    wasSeenDeeper blockID depth = do
       startDepthMap <- gets stackDepth_startDepthMap
@@ -82,14 +101,17 @@ maxStackDepth blockID blockMap =
                then return True
                -- was not previously deeper
                else updateStartMap >> return False
-   maxStackDepthBytecodes :: Word32 -> [Bytecode] -> StackDepth ()
-   maxStackDepthBytecodes _depth [] = return ()
+   maxStackDepthBytecodes :: Word32 -> [Bytecode] -> StackDepth (Maybe Word32)
+   -- return Nothing if the remaining code is dead, otherwise return
+   -- the current stack depth
+   maxStackDepthBytecodes depth [] = return $ Just depth
    maxStackDepthBytecodes depth (bytecode@(Bytecode {..}) : rest) = do
       modify $ updateMaxDepth newDepth
       when (isJump opcode) $ maxStackDepthJump newDepth opcode args 
       -- remaining code is dead if instruction is a non-conditional jump
-      unless (opcode == JUMP_ABSOLUTE || opcode == JUMP_FORWARD) $ do
-         maxStackDepthBytecodes newDepth rest
+      if (opcode == JUMP_ABSOLUTE || opcode == JUMP_FORWARD)
+         then return Nothing
+         else maxStackDepthBytecodes newDepth rest
       where
       newDepth = depth + codeStackEffect bytecode
    updateMaxDepth :: Word32 -> StackDepthState -> StackDepthState
@@ -99,7 +121,8 @@ maxStackDepth blockID blockMap =
       where
       maxDepth = stackDepth_maxDepth state
    maxStackDepthJump :: Word32 -> Opcode -> Maybe BytecodeArg -> StackDepth ()
-   maxStackDepthJump _depth _opcode Nothing = error "jump instruction without argument"
+   maxStackDepthJump _depth _opcode Nothing =
+      error "jump instruction without argument"
    maxStackDepthJump depth opcode (Just (Arg16 oparg)) =
       maxStackDepthJumpOp depth opcode oparg
    maxStackDepthJumpOp :: Word32 -> Opcode -> BlockID -> StackDepth ()
