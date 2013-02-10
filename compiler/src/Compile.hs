@@ -99,7 +99,8 @@ instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
       setBlockState initBlockState
-      compileBodyStmts stmts
+      compile $ BodySuite stmts
+      -- XXX only return None if necessary
       returnNone
       state <- getBlockState id
       code <- assemble
@@ -107,28 +108,31 @@ instance Compilable Body where
       makeObject (state_names state) (state_constants state)
          code stackDepth
 
-compileBodyStmts :: [StatementSpan] -> Compile ()
-compileBodyStmts [] = return () 
-compileBodyStmts (s:ss) = do
-   case s of
-      Assign [Var ident _] e _ -> do
-         compile e
-         nameID <- compileName $ ident_string ident
-         emitCodeArg STORE_NAME nameID
-      Return { return_expr = Nothing } -> returnNone
-      Return { return_expr = Just expr } ->
-         compile expr >> emitCodeNoArg RETURN_VALUE
-      Pass {} -> return ()
-      StmtExpr { stmt_expr = expr } -> 
-         unless (isPureExpr expr) $ 
-            compile expr >> emitCodeNoArg POP_TOP
-      Conditional { cond_guards = guards, cond_else = elseStmt } -> do
-         restLabel <- newLabel
-         compileGuards restLabel guards
-         compileBodyStmts elseStmt
-         labelNextInstruction restLabel
-      _other -> error ("Unsupported statement " ++ show s) 
-   compileBodyStmts ss
+newtype BodySuite = BodySuite [StatementSpan]
+
+instance Compilable BodySuite where
+   type CompileResult BodySuite = ()
+   compile (BodySuite []) = return () 
+   compile (BodySuite (s:ss)) = do
+      case s of
+         Assign [Var ident _] e _ -> do
+            compile e
+            nameID <- compileName $ ident_string ident
+            emitCodeArg STORE_NAME nameID
+         Return { return_expr = Nothing } -> returnNone
+         Return { return_expr = Just expr } ->
+            compile expr >> emitCodeNoArg RETURN_VALUE
+         Pass {} -> return ()
+         StmtExpr { stmt_expr = expr } -> 
+            unless (isPureExpr expr) $ 
+               compile expr >> emitCodeNoArg POP_TOP
+         Conditional { cond_guards = guards, cond_else = elseStmt } -> do
+            restLabel <- newLabel
+            compileGuards restLabel guards
+            compile $ BodySuite elseStmt
+            labelNextInstruction restLabel
+         _other -> error ("Unsupported statement " ++ show s) 
+      compile $ BodySuite ss
 
 compileGuards:: Word16 -> [(ExprSpan, [StatementSpan])] -> Compile ()
 compileGuards _restLabel [] = return ()
@@ -136,21 +140,58 @@ compileGuards restLabel ((expr, stmt) : rest) = do
    compile expr
    falseLabel <- newLabel
    emitCodeArg POP_JUMP_IF_FALSE falseLabel
-   compileBodyStmts stmt
+   compile $ BodySuite stmt
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
    compileGuards restLabel rest
 
+constantToPyObject :: ExprSpan -> PyObject
+constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value
+constantToPyObject (AST.Bool { bool_value = True }) = Blip.TrueObj
+constantToPyObject (AST.Bool { bool_value = False }) = Blip.FalseObj
+constantToPyObject (AST.None {}) = Blip.None
+-- assumes all the tuple elements are constant
+-- XXX what about tuples containig lists?
+constantToPyObject (AST.Tuple {..}) =
+   Blip.Tuple { elements = map constantToPyObject tuple_exprs }
+
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
-   compile (AST.Int {..}) =
-      compileConstantEmit $ Blip.Int $ fromIntegral int_value
-   compile (AST.None {}) = do
-      compileConstantEmit Blip.None
-   compile (Paren { paren_expr = expr }) = compile expr
    compile (Var { var_ident = ident }) = do
       nameID <- compileName $ ident_string ident
       emitCodeArg LOAD_NAME nameID
+   compile expr@(AST.Int {..}) =
+      compileConstantEmit $ constantToPyObject expr
+{-
+   -- Float not yet defined in Blip
+   compile (AST.Float {..}) =
+      compileConstantEmit $ Blip.Float $ float_value
+-}
+   compile expr@(AST.Bool {..}) =
+      compileConstantEmit $ constantToPyObject expr
+   compile expr@(AST.None {}) =
+      compileConstantEmit $ constantToPyObject expr
+   compile (AST.Paren {..}) = compile paren_expr
+   compile (AST.CondExpr {..}) = do
+      compile ce_condition
+      falseLabel <- newLabel
+      emitCodeArg POP_JUMP_IF_FALSE falseLabel
+      compile ce_true_branch
+      restLabel <- newLabel
+      emitCodeArg JUMP_FORWARD restLabel
+      labelNextInstruction falseLabel 
+      compile ce_false_branch
+      labelNextInstruction restLabel
+   compile expr@(AST.Tuple {..})
+      | isPureExpr expr =
+           compileConstantEmit $ constantToPyObject expr
+      | otherwise = do
+           Traversable.mapM compile tuple_exprs
+           emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
+   -- XXX Why not handle the constant case like Tuple?
+   compile expr@(AST.List {..}) = do
+      Traversable.mapM compile list_exprs
+      emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
    compile other = error $ "unsupported expr: " ++ show other
 
 -- True if evaluating an expression has no observable side effect
