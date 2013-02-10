@@ -1,7 +1,7 @@
 module State
    (setBlockState, getBlockState, initBlockState, initState, 
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
-    getFileName, newLabel, compileConstantEmit)
+    getFileName, newLabel, compileConstantEmit, labelNextInstruction)
    where
 
 import Monad (Compile (..))
@@ -56,6 +56,10 @@ newLabel = do
    let newLabel = currentLabel + 1
    modifyBlockState $ \s -> s { state_label = newLabel }
    return currentLabel
+
+labelNextInstruction :: Word16 -> Compile ()
+labelNextInstruction label = 
+   modifyBlockState $ \ s -> s { state_labelNextInstruction = Just label }
 
 emitCodeArg :: Opcode -> Word16 -> Compile ()
 emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)

@@ -6,7 +6,8 @@ module Compile (compileFile, CompileConfig (..)) where
 import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
-    emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit, getFileName, newLabel)
+    emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit,
+    getFileName, newLabel, labelNextInstruction)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -98,17 +99,16 @@ instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
       setBlockState initBlockState
-      -- Traversable.mapM compile stmts
       compileBodyStmts stmts
+      returnNone
       state <- getBlockState id
       code <- assemble
-      -- let code = []
       let stackDepth = 10
       makeObject (state_names state) (state_constants state)
-                 code stackDepth
+         code stackDepth
 
 compileBodyStmts :: [StatementSpan] -> Compile ()
-compileBodyStmts [] = returnNone
+compileBodyStmts [] = return () 
 compileBodyStmts (s:ss) = do
    case s of
       Assign [Var ident _] e _ -> do
@@ -122,29 +122,24 @@ compileBodyStmts (s:ss) = do
       StmtExpr { stmt_expr = expr } -> 
          unless (isPureExpr expr) $ 
             compile expr >> emitCodeNoArg POP_TOP
+      Conditional { cond_guards = guards, cond_else = elseStmt } -> do
+         restLabel <- newLabel
+         compileGuards restLabel guards
+         compileBodyStmts elseStmt
+         labelNextInstruction restLabel
       _other -> error ("Unsupported statement " ++ show s) 
    compileBodyStmts ss
 
-{-
-instance Compilable StatementSpan where
-   type CompileResult StatementSpan = ()
-   -- XXX fix multiple assignment
-   compile (Assign [Var ident _] e _) = do
-      compile e
-      nameID <- compileName $ ident_string ident
-      emitCodeArg STORE_NAME nameID
-   -- XXX should check if return statement is inside a function body
-   compile (Return { return_expr = Nothing }) = returnNone
-   compile (Return { return_expr = Just expr }) = 
-      compile expr >> emitCodeNoArg RETURN_VALUE
-   compile (Pass {}) = return ()
-   -- Don't emit code for pure expressions, as statements they have no
-   -- observable effect.
-   compile (StmtExpr { stmt_expr = expr }) = do
-      unless (isPureExpr expr) $ 
-         compile expr >> emitCodeNoArg POP_TOP
-   compile s = error ("Unsupported statement " ++ show s)
--}
+compileGuards:: Word16 -> [(ExprSpan, [StatementSpan])] -> Compile ()
+compileGuards _restLabel [] = return ()
+compileGuards restLabel ((expr, stmt) : rest) = do
+   compile expr
+   falseLabel <- newLabel
+   emitCodeArg POP_JUMP_IF_FALSE falseLabel
+   compileBodyStmts stmt
+   emitCodeArg JUMP_FORWARD restLabel
+   labelNextInstruction falseLabel 
+   compileGuards restLabel rest
 
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
@@ -153,6 +148,10 @@ instance Compilable ExprSpan where
    compile (AST.None {}) = do
       compileConstantEmit Blip.None
    compile (Paren { paren_expr = expr }) = compile expr
+   compile (Var { var_ident = ident }) = do
+      nameID <- compileName $ ident_string ident
+      emitCodeArg LOAD_NAME nameID
+   compile other = error $ "unsupported expr: " ++ show other
 
 -- True if evaluating an expression has no observable side effect
 -- Raising an exception is a side-effect, so variables are not pure.
