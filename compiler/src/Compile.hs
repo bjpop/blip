@@ -33,7 +33,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
-import Control.Monad (unless)
+import Control.Monad (unless, forM_)
 import Control.Exception (try)
 import System.IO.Error (IOError, userError, ioError)
 
@@ -208,6 +208,15 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
+   compile expr@(AST.Set {..}) = do
+      mapM compile set_exprs
+      emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
+   compile expr@(Dictionary {..}) = do
+      emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
+      forM_ dict_mappings $ \(key, value) -> do
+         compile value
+         compile key
+         emitCodeNoArg STORE_MAP
    compile (Yield { yield_expr = Nothing }) =
       compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE
    compile (Yield { yield_expr = Just expr }) =
