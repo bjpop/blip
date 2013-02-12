@@ -176,6 +176,8 @@ instance Compilable ExprSpan where
    compile (Var { var_ident = ident }) = do
       nameID <- compileName $ ident_string ident
       emitCodeArg LOAD_NAME nameID
+   compile expr@(AST.Strings {..}) =
+      compileConstantEmit $ constantToPyObject strings_strings
    compile expr@(AST.Int {..}) =
       compileConstantEmit $ constantToPyObject expr
 {-
@@ -214,6 +216,7 @@ instance Compilable ExprSpan where
    compile expr@(Dictionary {..}) = do
       emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
       forM_ dict_mappings $ \(key, value) -> do
+         -- yes, we compile the value first, then the key
          compile value
          compile key
          emitCodeNoArg STORE_MAP
