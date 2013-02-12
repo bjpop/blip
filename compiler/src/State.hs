@@ -58,8 +58,12 @@ newLabel = do
    return currentLabel
 
 labelNextInstruction :: Word16 -> Compile ()
-labelNextInstruction label = 
-   modifyBlockState $ \ s -> s { state_labelNextInstruction = Just label }
+labelNextInstruction label = do
+   currentLabelNext <- getBlockState state_labelNextInstruction
+   -- an instruction should be labelled at most once.
+   case currentLabelNext of
+      Just _label -> error "Attempt to label an instruction twice"
+      Nothing -> modifyBlockState $ \ s -> s { state_labelNextInstruction = Just label }
 
 emitCodeArg :: Opcode -> Word16 -> Compile ()
 emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)
