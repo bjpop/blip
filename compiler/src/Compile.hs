@@ -170,6 +170,15 @@ constantToPyObject (AST.None {}) = Blip.None
 -- XXX what about tuples containig lists?
 constantToPyObject (AST.Tuple {..}) =
    Blip.Tuple { elements = map constantToPyObject tuple_exprs }
+constantToPyObject (AST.Strings {..}) =
+   Blip.Unicode { unicode = concat $ map stripQuotes strings_strings }
+   where
+   -- The strings in the AST retain their original quote marks which
+   -- need to be removed.
+   stripQuotes :: String -> String
+   stripQuotes str
+      | length str >= 2 = tail $ init str
+      | otherwise = str
 
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
@@ -177,7 +186,7 @@ instance Compilable ExprSpan where
       nameID <- compileName $ ident_string ident
       emitCodeArg LOAD_NAME nameID
    compile expr@(AST.Strings {..}) =
-      compileConstantEmit $ constantToPyObject strings_strings
+      compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.Int {..}) =
       compileConstantEmit $ constantToPyObject expr
 {-
