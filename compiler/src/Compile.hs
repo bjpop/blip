@@ -3,6 +3,7 @@
 
 module Compile (compileFile, CompileConfig (..)) where
 
+import Prelude hiding (mapM)
 import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
@@ -19,7 +20,8 @@ import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
 import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
    (ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
-   , ExprSpan (..), Expr (..), Ident (..))
+   , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
+   , OpSpan, Op (..))
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -80,13 +82,15 @@ compileModule config pyFileModifiedTime pyFileSizeBytes pyFileName mod = do
       , size = pyFileSizeBytes
       , object = obj }
 
+{-
 instance Compilable a => Compilable [a] where
    type CompileResult [a] = [CompileResult a]
-   compile = Traversable.mapM compile
+   compile = mapM compile
 
 instance Compilable a => Compilable (Maybe a) where
    type CompileResult (Maybe a) = Maybe (CompileResult a)
-   compile = Traversable.mapM compile
+   compile = mapM compile
+-}
 
 instance Compilable ModuleSpan where
    type CompileResult ModuleSpan = PyObject
@@ -123,14 +127,26 @@ instance Compilable BodySuite where
          Return { return_expr = Just expr } ->
             compile expr >> emitCodeNoArg RETURN_VALUE
          Pass {} -> return ()
-         StmtExpr { stmt_expr = expr } -> 
-            unless (isPureExpr expr) $ 
-               compile expr >> emitCodeNoArg POP_TOP
-         Conditional { cond_guards = guards, cond_else = elseStmt } -> do
+         StmtExpr {..} -> 
+            unless (isPureExpr stmt_expr) $ 
+               compile stmt_expr >> emitCodeNoArg POP_TOP
+         Conditional {..} -> do
             restLabel <- newLabel
-            compileGuards restLabel guards
-            compile $ BodySuite elseStmt
+            compileGuards restLabel cond_guards 
+            compile $ BodySuite cond_else
             labelNextInstruction restLabel
+         -- XXX need to handle else block
+         While {..} -> do
+            startLoop <- newLabel
+            endLoop <- newLabel
+            emitCodeArg SETUP_LOOP endLoop
+            labelNextInstruction startLoop
+            compile while_cond
+            emitCodeArg POP_JUMP_IF_FALSE endLoop
+            compile $ BodySuite while_body
+            emitCodeArg JUMP_ABSOLUTE startLoop
+            labelNextInstruction endLoop
+            emitCodeNoArg POP_BLOCK
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
 
@@ -186,14 +202,105 @@ instance Compilable ExprSpan where
       | isPureExpr expr =
            compileConstantEmit $ constantToPyObject expr
       | otherwise = do
-           Traversable.mapM compile tuple_exprs
+           mapM compile tuple_exprs
            emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
    -- XXX Why not handle the constant case like Tuple?
    compile expr@(AST.List {..}) = do
-      Traversable.mapM compile list_exprs
+      mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
+   compile (Yield { yield_expr = Nothing }) =
+      compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE
+   compile (Yield { yield_expr = Just expr }) =
+      compile expr >> emitCodeNoArg YIELD_VALUE 
+   compile (Call {..}) = do
+      compile call_fun
+      mapM compile call_args
+      emitCodeArg CALL_FUNCTION $ fromIntegral $ length call_args
+   compile (Subscript {..}) = do
+      compile subscriptee
+      compile subscript_expr
+      emitCodeNoArg BINARY_SUBSCR
+   compile exp@(BinaryOp {..})
+      | isBoolean operator = compileBoolean exp
+      | isComparison operator = compileComparison exp
+      | otherwise = do 
+           compile left_op_arg
+           compile right_op_arg
+           compileOp operator 
    compile other = error $ "unsupported expr: " ++ show other
 
+instance Compilable ArgumentSpan where
+   type CompileResult ArgumentSpan = ()
+   compile (ArgExpr {..}) = compile arg_expr
+   compile other = error $ "unsupported argument: " ++ show other
+
+isBoolean :: OpSpan -> Bool
+isBoolean (And {}) = True
+isBoolean (Or {}) = True
+isBoolean other = False
+
+isComparison :: OpSpan -> Bool
+isComparison (LessThan {}) = True
+isComparison (GreaterThan {}) = True
+isComparison (Equality {}) = True
+isComparison (GreaterThanEquals {}) = True
+isComparison (LessThanEquals {}) = True
+isComparison (NotEquals  {}) = True
+isComparison other = False
+
+compileBoolean :: ExprSpan -> Compile ()
+compileBoolean (BinaryOp {..}) = do
+   endLabel <- newLabel
+   compile left_op_arg
+   case operator of
+      And {..} -> emitCodeArg POP_JUMP_IF_FALSE endLabel
+      Or {..} ->  emitCodeArg POP_JUMP_IF_TRUE endLabel
+      other -> error $ "unexpected boolean operator: " ++ show other
+   compile right_op_arg
+   labelNextInstruction endLabel
+
+compileOp :: OpSpan -> Compile ()
+compileOp operator =
+   emitCodeNoArg $ case operator of
+      BinaryOr {} -> BINARY_OR
+      Xor {} -> BINARY_XOR
+      BinaryAnd {} -> BINARY_AND
+      ShiftLeft {} -> BINARY_LSHIFT
+      ShiftRight {} -> BINARY_RSHIFT
+      Exponent {} -> BINARY_POWER
+      Multiply {} -> BINARY_MULTIPLY
+      Plus {} -> BINARY_ADD
+      Minus {} -> BINARY_SUBTRACT
+      Divide {} -> BINARY_TRUE_DIVIDE
+      FloorDivide {} -> BINARY_FLOOR_DIVIDE
+      Modulo {} -> BINARY_MODULO
+
+{-
+from object.h
+
+#define Py_LT 0
+#define Py_LE 1
+#define Py_EQ 2
+#define Py_NE 3
+#define Py_GT 4
+#define Py_GE 5
+-}
+
+compileComparison :: ExprSpan -> Compile ()
+compileComparison (BinaryOp {..}) = do
+   compile left_op_arg
+   compile right_op_arg
+   emitCodeArg COMPARE_OP $ comparisonOpCode operator
+   where
+   comparisonOpCode :: OpSpan -> Word16
+   comparisonOpCode (LessThan {}) = 0 
+   comparisonOpCode (LessThanEquals {}) = 1
+   comparisonOpCode (Equality {}) = 2 
+   comparisonOpCode (NotEquals {}) = 3 
+   comparisonOpCode (GreaterThan {}) = 4 
+   comparisonOpCode (GreaterThanEquals {}) = 5 
+   comparisonOpCode other = error $ "Unexpected comparison operator: " ++ show operator
+ 
 -- True if evaluating an expression has no observable side effect
 -- Raising an exception is a side-effect, so variables are not pure.
 isPureExpr :: ExprSpan -> Bool
