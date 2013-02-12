@@ -8,7 +8,8 @@ import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
     emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit,
-    getFileName, newLabel, labelNextInstruction)
+    getFileName, newLabel, labelNextInstruction, getObjectName,
+    setObjectName)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -94,15 +95,30 @@ instance Compilable a => Compilable (Maybe a) where
 
 instance Compilable ModuleSpan where
    type CompileResult ModuleSpan = PyObject
-   compile (Module stmts) = compile $ Body stmts
+   compile (Module stmts) =
+      nestedBlock "<module>" $ compile $ Body stmts
 
 -- body of module, function and class
 newtype Body = Body [StatementSpan]
 
+nestedBlock :: String -> Compile a -> Compile a
+nestedBlock objectName comp = do
+   -- save the current block state
+   oldBlockState <- getBlockState id
+   -- reset new block state to initial values
+   setBlockState initBlockState
+   -- set the new object name
+   setObjectName objectName
+   -- run the nested computation
+   result <- comp
+   -- restore the original block state
+   setBlockState oldBlockState
+   return result
+
 instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
-      setBlockState initBlockState
+      -- setBlockState initBlockState
       compile $ BodySuite stmts
       -- XXX only return None if necessary
       returnNone
@@ -147,6 +163,14 @@ instance Compilable BodySuite where
             emitCodeArg JUMP_ABSOLUTE startLoop
             labelNextInstruction endLoop
             emitCodeNoArg POP_BLOCK
+         Fun {..} -> do
+            let funName = ident_string $ fun_name
+            nameID <- compileName funName
+            funBodyObj <- nestedBlock funName $ compile $ Body fun_body
+            compileConstantEmit funBodyObj
+            compileConstantEmit $ Unicode funName
+            emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
+            emitCodeArg STORE_NAME nameID
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
 
@@ -350,6 +374,7 @@ makeObject names constants code maxStackDepth = do
       then error "Maximum stack depth exceeded"
       else do
          pyFileName <- getFileName
+         objectName <- getObjectName
          let obj = Code
                    { argcount = 0
                    , kwonlyargcount = 0
@@ -363,7 +388,7 @@ makeObject names constants code maxStackDepth = do
                    , freevars = Blip.Tuple [] 
                    , cellvars = Blip.Tuple []
                    , filename = Unicode pyFileName
-                   , name = Unicode "somename"
+                   , name = Unicode objectName
                    , firstlineno = 0
                    , lnotab = String B.empty
                    }

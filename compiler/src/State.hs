@@ -1,7 +1,8 @@
 module State
    (setBlockState, getBlockState, initBlockState, initState, 
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
-    getFileName, newLabel, compileConstantEmit, labelNextInstruction)
+    getFileName, newLabel, compileConstantEmit, labelNextInstruction,
+    getObjectName, setObjectName)
    where
 
 import Monad (Compile (..))
@@ -25,6 +26,7 @@ initBlockState = BlockState
    , state_nextConstantID = 0
    , state_names = Map.empty
    , state_nextNameID = 0
+   , state_objectName = ""
    }
 
 initState :: CompileConfig -> FilePath -> CompileState
@@ -36,6 +38,12 @@ initState config pyFilename = CompileState
 
 getFileName :: Compile FilePath
 getFileName = gets state_filename
+
+getObjectName :: Compile String
+getObjectName = getBlockState state_objectName
+
+setObjectName :: String -> Compile ()
+setObjectName str = modifyBlockState $ \s -> s { state_objectName = str }
 
 setBlockState :: BlockState -> Compile ()
 setBlockState blockState = do
@@ -98,6 +106,7 @@ compileName ident = do
          return nameID
       Just nameID -> return nameID
 
+-- XXX probably only want to consider equality on simple constants, not functions
 compileConstant :: PyObject -> Compile ConstantID
 compileConstant obj = do
    blockState <- getBlockState id

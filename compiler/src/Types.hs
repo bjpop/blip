@@ -40,5 +40,6 @@ data BlockState = BlockState
    , state_nextConstantID :: !ConstantID
    , state_names :: NameMap
    , state_nextNameID :: !NameID
+   , state_objectName :: String
    }
    deriving (Show)
