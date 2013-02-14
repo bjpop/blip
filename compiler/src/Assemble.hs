@@ -2,22 +2,85 @@
 
 module Assemble (assemble) where
  
-import Utils (isJump)
+import Utils (isJump, unlabel)
 import Types (BlockState (..), Labelled (..))
 import State (getBlockState)
-import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..))
+import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
+import Control.Monad.Trans (liftIO)
 import Monad (Compile (..))
--- import Data.Word (Word32, Word16)
+import Data.Map as Map (Map, insert, empty, lookup)
+import Data.Word (Word16)
+import Data.List as List (foldl')
 
-unlabel :: Labelled a -> a
-unlabel (Labelled x _) = x
-unlabel (UnLabelled x) = x
-
--- XXX this is incorrect, needs to calculate offsets for labels
 assemble :: Compile [Bytecode]
 assemble = do
    labelledCode <- getBlockState state_instructions
-   return $ map unlabel $ reverse labelledCode
+   liftIO $ putStrLn $ unlines $ map show $ reverse labelledCode
+   let (labelMap, indexedBytecode) = codeOffsets $ reverse labelledCode
+       finalBytecode = applyLabelMap labelMap indexedBytecode
+   liftIO $ print labelMap
+   liftIO $ putStrLn $ unlines $ map show $ indexedBytecode
+   return finalBytecode
+
+type LabelMap = Map.Map Word16 Word16
+type IndexedBytecode = [(Bytecode, Word16)]
+
+-- Build a mapping from label to offset, and a list of bytecodes paired with their offset.
+codeOffsets :: [Labelled Bytecode] -> (LabelMap, IndexedBytecode) 
+codeOffsets code = (labelMap, reverse indexedBytecode)
+   where
+   (_index, labelMap, indexedBytecode) =
+      List.foldl' updateAccum (0, Map.empty, []) code
+   updateAccum :: (Word16, LabelMap, IndexedBytecode) -> 
+                  Labelled Bytecode -> (Word16, LabelMap, IndexedBytecode)
+   updateAccum (offset, labelMap, indexedBytecode) (Labelled code label) =
+      (newOffset offset code,
+       Map.insert label offset labelMap,
+       (code, offset) : indexedBytecode)
+   updateAccum (offset, labelMap, indexedBytecode) (UnLabelled code) =
+      (newOffset offset code, labelMap, (code, offset) : indexedBytecode)
+   newOffset :: Word16 -> Bytecode -> Word16
+   newOffset old code = old + fromIntegral (bytecodeSize code)
+
+{-
+-- calculate how big a bytecode is in 16 bit words
+codeSize :: Bytecode -> Word16
+codeSize (Bytecode { args = Nothing }) = 1
+codeSize (Bytecode { args = Just _ }) = 2
+-}
+
+applyLabelMap :: LabelMap -> IndexedBytecode -> [Bytecode]
+applyLabelMap labelMap code =
+   map fixLabel code
+   where
+   fixLabel :: (Bytecode, Word16) -> Bytecode
+   fixLabel indexedCode@(code@(Bytecode {..}), index)
+      | isJump opcode = fixJump indexedCode
+      | otherwise = code 
+   fixJump :: (Bytecode, Word16) -> Bytecode
+   fixJump (code@(Bytecode {..}), index) =
+      case args of
+         Nothing -> error $ "Jump instruction without argument: " ++ show code 
+         Just (Arg16 label) -> 
+            case Map.lookup label labelMap of
+               Nothing -> error $ "Jump instruction to unknown target label: " ++ show code
+               Just target ->
+                  case opcode of
+                     JUMP_FORWARD -> relativeTarget code index target
+                     -- SETUP_LOOP -> code { args = Just $ Arg16 target }
+                     SETUP_LOOP -> relativeTarget code index target
+                     POP_JUMP_IF_FALSE -> code { args = Just $ Arg16 target }
+                     POP_JUMP_IF_TRUE -> code { args = Just $ Arg16 target }
+                     JUMP_ABSOLUTE -> code { args = Just $ Arg16 target }
+                     JUMP_IF_FALSE_OR_POP -> code { args = Just $ Arg16 target }
+                     JUMP_IF_TRUE_OR_POP -> code { args = Just $ Arg16 target }
+
+-- XXX not sure if this calculation is right
+relativeTarget :: Bytecode -> Word16 -> Word16 -> Bytecode
+relativeTarget code@(Bytecode {..}) index target
+   = code { args = Just $ Arg16 newTarget } 
+   where
+   newTarget = target - (index + (fromIntegral $ bytecodeSize code))
 
 {-
 -- Blocks we've already seen in a depth-first path in the control flow graph
@@ -66,15 +129,6 @@ dfs blockID blockMap =
    dfsBytecodeJump blockMap Nothing = error "jump instruction without argument"
    dfsBytecodeJump blockMap (Just (Arg16 oparg)) = dfsM oparg blockMap
 
-type JumpMap = Map.Map BlockID Word16
-
-makeJumpMap :: BlockSequence -> JumpMap
-makeJumpMap sequence = snd $ List.foldl' updateAccum (0, Map.empty) sequence
-   where
-   updateAccum :: (Word16, JumpMap) -> (BlockID, [Bytecode]) -> (Word16, JumpMap)
-   updateAccum (offset, jumpMap) (blockID, bytecode) =
-      -- XXX should check for overflow of Word16
-      (offset + fromIntegral (length bytecode), Map.insert blockID offset jumpMap)
 
 assembleSequence :: JumpMap -> BlockSequence -> [Bytecode]
 assembleSequence _jumpMap [] = []

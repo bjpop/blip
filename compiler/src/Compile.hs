@@ -9,7 +9,7 @@ import State
    (setBlockState, getBlockState, initBlockState, initState,
     emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit,
     getFileName, newLabel, labelNextInstruction, getObjectName,
-    setObjectName)
+    setObjectName, getLastInstruction)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -98,9 +98,6 @@ instance Compilable ModuleSpan where
    compile (Module stmts) =
       nestedBlock "<module>" $ compile $ Body stmts
 
--- body of module, function and class
-newtype Body = Body [StatementSpan]
-
 nestedBlock :: String -> Compile a -> Compile a
 nestedBlock objectName comp = do
    -- save the current block state
@@ -115,18 +112,24 @@ nestedBlock objectName comp = do
    setBlockState oldBlockState
    return result
 
+-- body of module, function and class
+newtype Body = Body [StatementSpan]
+
 instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
       -- setBlockState initBlockState
       compile $ BodySuite stmts
-      -- XXX only return None if necessary
-      returnNone
+      -- if the last instruction is not a return, then return None
+      maybeLastInstruction <- getLastInstruction
+      case maybeLastInstruction of
+         Nothing -> returnNone
+         Just (Bytecode { opcode = RETURN_VALUE }) -> return ()
+         other -> returnNone
       state <- getBlockState id
       code <- assemble
       let stackDepth = 10
-      makeObject (state_names state) (state_constants state)
-         code stackDepth
+      makeObject (state_names state) (state_constants state) code stackDepth
 
 newtype BodySuite = BodySuite [StatementSpan]
 
@@ -148,7 +151,7 @@ instance Compilable BodySuite where
                compile stmt_expr >> emitCodeNoArg POP_TOP
          Conditional {..} -> do
             restLabel <- newLabel
-            compileGuards restLabel cond_guards 
+            mapM_ (compileGuard restLabel) cond_guards 
             compile $ BodySuite cond_else
             labelNextInstruction restLabel
          -- XXX need to handle else block
@@ -170,20 +173,19 @@ instance Compilable BodySuite where
             compileConstantEmit funBodyObj
             compileConstantEmit $ Unicode funName
             emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
+                                        -- appears to be related to keyword args, and defaults
             emitCodeArg STORE_NAME nameID
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
 
-compileGuards:: Word16 -> [(ExprSpan, [StatementSpan])] -> Compile ()
-compileGuards _restLabel [] = return ()
-compileGuards restLabel ((expr, stmt) : rest) = do
+compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
+compileGuard restLabel (expr, stmt) = do
    compile expr
    falseLabel <- newLabel
    emitCodeArg POP_JUMP_IF_FALSE falseLabel
    compile $ BodySuite stmt
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
-   compileGuards restLabel rest
 
 constantToPyObject :: ExprSpan -> PyObject
 constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value

@@ -1,6 +1,11 @@
-module Utils (isJump, isRelativeJump, isAbsoluteJump) where
+module Utils (isJump, isRelativeJump, isAbsoluteJump, unlabel) where
 
+import Types (Labelled (..))
 import Blip.Bytecode (Opcode (..))
+
+unlabel :: Labelled a -> a
+unlabel (Labelled x _) = x
+unlabel (UnLabelled x) = x
 
 -- test if an opcode is a jump instruction
 isJump :: Opcode -> Bool

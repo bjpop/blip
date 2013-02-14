@@ -2,9 +2,10 @@ module State
    (setBlockState, getBlockState, initBlockState, initState, 
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
     getFileName, newLabel, compileConstantEmit, labelNextInstruction,
-    getObjectName, setObjectName)
+    getObjectName, setObjectName, getLastInstruction)
    where
 
+import Utils (unlabel)
 import Monad (Compile (..))
 import Types
    (Identifier, CompileConfig (..), NameID, NameMap
@@ -35,6 +36,16 @@ initState config pyFilename = CompileState
    , state_blockState = initBlockState
    , state_filename = pyFilename
    }
+
+-- get the most recently added instruction to the state
+getLastInstruction :: Compile (Maybe Bytecode)
+getLastInstruction = do
+   instructions <- getBlockState state_instructions
+   if null instructions
+      then return Nothing
+      -- instructions are in reverse order, so the most recent
+      -- one is at the front of the list
+      else return $ Just $ unlabel $ head instructions
 
 getFileName :: Compile FilePath
 getFileName = gets state_filename
@@ -79,9 +90,9 @@ emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)
 emitCodeNoArg :: Opcode -> Compile ()
 emitCodeNoArg opCode = emitCode $ Bytecode opCode Nothing
 
--- Attach a label to the instruction if necesary.
 emitCode :: Bytecode -> Compile ()
 emitCode instruction = do
+   -- Attach a label to the instruction if necesary.
    maybeLabel <- getBlockState state_labelNextInstruction
    labelledInstruction <-
       case maybeLabel of
