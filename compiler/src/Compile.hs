@@ -154,18 +154,20 @@ instance Compilable BodySuite where
             mapM_ (compileGuard restLabel) cond_guards 
             compile $ BodySuite cond_else
             labelNextInstruction restLabel
-         -- XXX need to handle else block
          While {..} -> do
             startLoop <- newLabel
             endLoop <- newLabel
+            anchor <- newLabel
             emitCodeArg SETUP_LOOP endLoop
             labelNextInstruction startLoop
             compile while_cond
-            emitCodeArg POP_JUMP_IF_FALSE endLoop
+            emitCodeArg POP_JUMP_IF_FALSE anchor
             compile $ BodySuite while_body
             emitCodeArg JUMP_ABSOLUTE startLoop
-            labelNextInstruction endLoop
+            labelNextInstruction anchor 
             emitCodeNoArg POP_BLOCK
+            compile $ BodySuite while_else
+            labelNextInstruction endLoop
          Fun {..} -> do
             let funName = ident_string $ fun_name
             nameID <- compileName funName
