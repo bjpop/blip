@@ -14,7 +14,7 @@ import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), Labelled (..))
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..))
 import Scope (Scope (..), empty )
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)

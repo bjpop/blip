@@ -1,11 +1,10 @@
-module Utils (isJump, isRelativeJump, isAbsoluteJump, unlabel) where
+{-# LANGUAGE RecordWildCards #-}
+module Utils (isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode) where
 
-import Types (Labelled (..))
-import Blip.Bytecode (Opcode (..))
+import Blip.Bytecode (Opcode (..), Bytecode (..))
 
-unlabel :: Labelled a -> a
-unlabel (Labelled x _) = x
-unlabel (UnLabelled x) = x
+isJumpBytecode :: Bytecode -> Bool
+isJumpBytecode (Bytecode {..}) = isJump opcode
 
 -- test if an opcode is a jump instruction
 isJump :: Opcode -> Bool

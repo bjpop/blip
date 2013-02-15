@@ -2,8 +2,8 @@
 
 module Assemble (assemble) where
  
-import Utils (isJump, unlabel)
-import Types (BlockState (..), Labelled (..))
+import Utils (isJumpBytecode)
+import Types (BlockState (..), AnnotatedCode (..))
 import State (getBlockState)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Control.Monad.Trans (liftIO)
@@ -14,58 +14,49 @@ import Data.List as List (foldl')
 
 assemble :: Compile [Bytecode]
 assemble = do
-   labelledCode <- getBlockState state_instructions
-   -- liftIO $ putStrLn $ unlines $ map show $ reverse labelledCode
-   let (labelMap, indexedBytecode) = codeOffsets $ reverse labelledCode
-       finalBytecode = applyLabelMap labelMap indexedBytecode
-   -- liftIO $ print labelMap
-   -- liftIO $ putStrLn $ unlines $ map show $ indexedBytecode
+   annotatedCode <- reverse `fmap` getBlockState state_instructions
+   let labelMap = codeOffsets annotatedCode 
+       finalBytecode = applyLabelMap labelMap annotatedCode
    return finalBytecode
 
 type LabelMap = Map.Map Word16 Word16
-type IndexedBytecode = [(Bytecode, Word16)]
 
 -- Build a mapping from label to offset, and a list of bytecodes paired with their offset.
-codeOffsets :: [Labelled Bytecode] -> (LabelMap, IndexedBytecode) 
-codeOffsets code = (labelMap, reverse indexedBytecode)
+codeOffsets :: [AnnotatedCode] -> LabelMap
+codeOffsets code = List.foldl' updateAccum Map.empty code
    where
-   (_index, labelMap, indexedBytecode) =
-      List.foldl' updateAccum (0, Map.empty, []) code
-   updateAccum :: (Word16, LabelMap, IndexedBytecode) -> 
-                  Labelled Bytecode -> (Word16, LabelMap, IndexedBytecode)
-   updateAccum (offset, labelMap, indexedBytecode) (Labelled code label) =
-      (newOffset offset code,
-       Map.insert label offset labelMap,
-       (code, offset) : indexedBytecode)
-   updateAccum (offset, labelMap, indexedBytecode) (UnLabelled code) =
-      (newOffset offset code, labelMap, (code, offset) : indexedBytecode)
-   newOffset :: Word16 -> Bytecode -> Word16
-   newOffset old code = old + fromIntegral (bytecodeSize code)
+   updateAccum :: LabelMap -> AnnotatedCode -> LabelMap
+   updateAccum labelMap (Labelled {..}) =
+      Map.insert annotatedCode_label annotatedCode_index labelMap
+   updateAccum labelMap (UnLabelled {..}) = labelMap
 
-applyLabelMap :: LabelMap -> IndexedBytecode -> [Bytecode]
+applyLabelMap :: LabelMap -> [AnnotatedCode] -> [Bytecode]
 applyLabelMap labelMap code =
-   map fixLabel code
+   map fixJumpTarget code
    where
-   fixLabel :: (Bytecode, Word16) -> Bytecode
-   fixLabel indexedCode@(code@(Bytecode {..}), index)
-      | isJump opcode = fixJump indexedCode
-      | otherwise = code 
-   fixJump :: (Bytecode, Word16) -> Bytecode
-   fixJump (code@(Bytecode {..}), index) =
-      case args of
-         Nothing -> error $ "Jump instruction without argument: " ++ show code 
-         Just (Arg16 label) -> 
-            case Map.lookup label labelMap of
-               Nothing -> error $ "Jump instruction to unknown target label: " ++ show code
-               Just target ->
-                  case opcode of
-                     JUMP_FORWARD -> relativeTarget code index target
-                     SETUP_LOOP -> relativeTarget code index target
-                     POP_JUMP_IF_FALSE -> absoluteTarget code target 
-                     POP_JUMP_IF_TRUE -> absoluteTarget code target 
-                     JUMP_ABSOLUTE -> absoluteTarget code target 
-                     JUMP_IF_FALSE_OR_POP -> absoluteTarget code target
-                     JUMP_IF_TRUE_OR_POP -> absoluteTarget code target 
+   fixJumpTarget :: AnnotatedCode -> Bytecode
+   fixJumpTarget annotatedCode =
+      case opcode bytecode of
+         JUMP_FORWARD -> relativeTarget bytecode index jumpTarget 
+         SETUP_LOOP -> relativeTarget bytecode index jumpTarget
+         POP_JUMP_IF_FALSE -> absoluteTarget bytecode jumpTarget 
+         POP_JUMP_IF_TRUE -> absoluteTarget bytecode jumpTarget 
+         JUMP_ABSOLUTE -> absoluteTarget bytecode jumpTarget 
+         JUMP_IF_FALSE_OR_POP -> absoluteTarget bytecode jumpTarget
+         JUMP_IF_TRUE_OR_POP -> absoluteTarget bytecode jumpTarget 
+         other -> bytecode
+      where
+      bytecode = annotatedCode_bytecode annotatedCode
+      index = annotatedCode_index annotatedCode
+      jumpTarget =
+         case args bytecode of
+            Nothing ->
+               error $ "Jump instruction without argument: " ++ show code 
+            Just (Arg16 label) -> 
+               case Map.lookup label labelMap of
+                  Nothing ->
+                     error $ "Jump instruction to unknown target label: " ++ show code
+                  Just target -> target
 
 relativeTarget :: Bytecode -> Word16 -> Word16 -> Bytecode
 relativeTarget code@(Bytecode {..}) index target

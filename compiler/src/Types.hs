@@ -1,6 +1,7 @@
 module Types 
    (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), Labelled (..)) where
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   , AnnotatedCode (..)) where
 
 import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
@@ -8,9 +9,15 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-data Labelled a =
-   Labelled a Word16 | UnLabelled a
-   deriving (Eq, Show)
+data AnnotatedCode
+   = Labelled 
+     { annotatedCode_bytecode :: Bytecode
+     , annotatedCode_label :: !Word16
+     , annotatedCode_index :: !Word16 } 
+   | UnLabelled 
+     { annotatedCode_bytecode :: Bytecode
+     , annotatedCode_index :: !Word16 }
+   deriving Show
 
 type Identifier = String -- a variable name
 
@@ -34,12 +41,13 @@ data CompileState = CompileState
 
 data BlockState = BlockState 
    { state_label :: !Word16
-   , state_instructions :: [Labelled Bytecode]
+   , state_instructions :: [AnnotatedCode]
    , state_labelNextInstruction :: !(Maybe Word16) -- maybe label the next emitted instruction
    , state_constants :: ConstantMap
    , state_nextConstantID :: !ConstantID
    , state_names :: NameMap
    , state_nextNameID :: !NameID
    , state_objectName :: String
+   , state_instruction_index :: !Word16
    }
    deriving (Show)

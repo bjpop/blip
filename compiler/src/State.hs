@@ -5,12 +5,11 @@ module State
     getObjectName, setObjectName, getLastInstruction)
    where
 
-import Utils (unlabel)
 import Monad (Compile (..))
 import Types
    (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), Labelled (..))
-import Blip.Bytecode (Bytecode (..), Opcode (..), BytecodeArg (..))
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..), AnnotatedCode (..))
+import Blip.Bytecode (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
@@ -28,7 +27,15 @@ initBlockState = BlockState
    , state_names = Map.empty
    , state_nextNameID = 0
    , state_objectName = ""
+   , state_instruction_index = 0
    }
+
+incInstructionIndex :: Bytecode -> Compile Word16
+incInstructionIndex bytecode = do
+   currentIndex <- getBlockState state_instruction_index
+   let nextIndex = currentIndex + (fromIntegral $ bytecodeSize bytecode)
+   modifyBlockState $ \s -> s { state_instruction_index = nextIndex }
+   return currentIndex
 
 initState :: CompileConfig -> FilePath -> CompileState
 initState config pyFilename = CompileState
@@ -45,7 +52,7 @@ getLastInstruction = do
       then return Nothing
       -- instructions are in reverse order, so the most recent
       -- one is at the front of the list
-      else return $ Just $ unlabel $ head instructions
+      else return $ Just $ annotatedCode_bytecode $ head instructions
 
 getFileName :: Compile FilePath
 getFileName = gets state_filename
@@ -94,16 +101,21 @@ emitCode :: Bytecode -> Compile ()
 emitCode instruction = do
    -- Attach a label to the instruction if necesary.
    maybeLabel <- getBlockState state_labelNextInstruction
-   labelledInstruction <-
+   instructionIndex <- incInstructionIndex instruction
+   annotatedInstruction <-
       case maybeLabel of
-         Nothing -> return $ UnLabelled instruction
+         Nothing ->
+            return $ UnLabelled { annotatedCode_bytecode = instruction, 
+                                  annotatedCode_index = instructionIndex }
          Just label -> do
             -- make sure we only use this label once
             modifyBlockState $ \s -> s { state_labelNextInstruction = Nothing }
-            return $ Labelled instruction label
+            return $ Labelled { annotatedCode_bytecode = instruction 
+                              , annotatedCode_label = label
+                              , annotatedCode_index = instructionIndex }
    oldInstructions <- getBlockState state_instructions
    modifyBlockState $
-      \s -> s { state_instructions = labelledInstruction : oldInstructions }
+      \s -> s { state_instructions = annotatedInstruction : oldInstructions }
 
 compileName :: Identifier -> Compile NameID
 compileName ident = do
