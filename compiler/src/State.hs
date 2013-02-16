@@ -2,14 +2,16 @@ module State
    (setBlockState, getBlockState, initBlockState, initState, 
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
     getFileName, newLabel, compileConstantEmit, labelNextInstruction,
-    getObjectName, setObjectName, getLastInstruction)
+    getObjectName, setObjectName, getLastInstruction, getLabelMap)
    where
 
 import Monad (Compile (..))
 import Types
    (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..), AnnotatedCode (..))
-import Blip.Bytecode (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   , AnnotatedCode (..), LabelMap)
+import Blip.Bytecode
+   (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
@@ -28,6 +30,7 @@ initBlockState = BlockState
    , state_nextNameID = 0
    , state_objectName = ""
    , state_instruction_index = 0
+   , state_labelMap = Map.empty
    }
 
 incInstructionIndex :: Bytecode -> Compile Word16
@@ -110,12 +113,22 @@ emitCode instruction = do
          Just label -> do
             -- make sure we only use this label once
             modifyBlockState $ \s -> s { state_labelNextInstruction = Nothing }
+            updateLabelMap label instructionIndex
             return $ Labelled { annotatedCode_bytecode = instruction 
                               , annotatedCode_label = label
                               , annotatedCode_index = instructionIndex }
    oldInstructions <- getBlockState state_instructions
    modifyBlockState $
       \s -> s { state_instructions = annotatedInstruction : oldInstructions }
+
+getLabelMap :: Compile LabelMap
+getLabelMap = getBlockState state_labelMap
+
+updateLabelMap :: Word16 -> Word16 -> Compile ()
+updateLabelMap label index = do
+   oldLabelMap <- getBlockState state_labelMap
+   let newLabelMap = Map.insert label index oldLabelMap
+   modifyBlockState $ \s -> s { state_labelMap = newLabelMap }
 
 compileName :: Identifier -> Compile NameID
 compileName ident = do

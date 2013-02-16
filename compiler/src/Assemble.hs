@@ -3,8 +3,8 @@
 module Assemble (assemble) where
  
 import Utils (isJumpBytecode)
-import Types (BlockState (..), AnnotatedCode (..))
-import State (getBlockState)
+import Types (BlockState (..), AnnotatedCode (..), LabelMap)
+import State (getBlockState, getLabelMap)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Control.Monad.Trans (liftIO)
 import Monad (Compile (..))
@@ -15,20 +15,8 @@ import Data.List as List (foldl')
 assemble :: Compile [Bytecode]
 assemble = do
    annotatedCode <- reverse `fmap` getBlockState state_instructions
-   let labelMap = codeOffsets annotatedCode 
-       finalBytecode = applyLabelMap labelMap annotatedCode
-   return finalBytecode
-
-type LabelMap = Map.Map Word16 Word16
-
--- Build a mapping from label to offset, and a list of bytecodes paired with their offset.
-codeOffsets :: [AnnotatedCode] -> LabelMap
-codeOffsets code = List.foldl' updateAccum Map.empty code
-   where
-   updateAccum :: LabelMap -> AnnotatedCode -> LabelMap
-   updateAccum labelMap (Labelled {..}) =
-      Map.insert annotatedCode_label annotatedCode_index labelMap
-   updateAccum labelMap (UnLabelled {..}) = labelMap
+   labelMap <- getLabelMap
+   return $ applyLabelMap labelMap annotatedCode
 
 applyLabelMap :: LabelMap -> [AnnotatedCode] -> [Bytecode]
 applyLabelMap labelMap code =

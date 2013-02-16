@@ -1,7 +1,7 @@
 module Types 
    (Identifier, CompileConfig (..), NameID, NameMap
    , ConstantID, ConstantMap, CompileState (..), BlockState (..)
-   , AnnotatedCode (..)) where
+   , AnnotatedCode (..), LabelMap) where
 
 import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
@@ -39,6 +39,8 @@ data CompileState = CompileState
    , state_filename :: FilePath
    }
 
+type LabelMap = Map.Map Word16 Word16
+
 data BlockState = BlockState 
    { state_label :: !Word16
    , state_instructions :: [AnnotatedCode]
@@ -49,5 +51,6 @@ data BlockState = BlockState
    , state_nextNameID :: !NameID
    , state_objectName :: String
    , state_instruction_index :: !Word16
+   , state_labelMap :: LabelMap
    }
    deriving (Show)
