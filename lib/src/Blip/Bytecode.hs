@@ -1,3 +1,15 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Blip.Bytecode
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Python 3 bytecode.
+--
+-----------------------------------------------------------------------------
 module Blip.Bytecode
    ( decode, encode, Opcode (..), Bytecode (..),
      BytecodeArg (..), BytecodeSeq (..), bytecodeSize ) where

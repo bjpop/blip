@@ -1,4 +1,16 @@
 {-# LANGUAGE RecordWildCards #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Blip.Marshal
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Reading, writing and representation of Python bytecode files.
+--
+-----------------------------------------------------------------------------
 
 module Blip.Marshal (readPyc, writePyc, PycFile (..), PyObject (..)) where
 
