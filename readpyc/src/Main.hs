@@ -1,4 +1,15 @@
-{- | Read and pretty print a Python bytecode file (.pyc file). -}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Main 
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- A program to read and pretty print a Python bytecode file (.pyc file).
+--
+-----------------------------------------------------------------------------
 
 module Main where
 
