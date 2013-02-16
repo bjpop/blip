@@ -16,6 +16,7 @@
 module Compile (compileFile, CompileConfig (..)) where
 
 import Prelude hiding (mapM)
+import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
@@ -26,7 +27,8 @@ import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..))
+   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   , AnnotatedCode (..))
 import Scope (Scope (..), empty )
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -130,7 +132,6 @@ newtype Body = Body [StatementSpan]
 instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
-      -- setBlockState initBlockState
       compile $ BodySuite stmts
       -- if the last instruction is not a return, then return None
       maybeLastInstruction <- getLastInstruction
@@ -138,10 +139,8 @@ instance Compilable Body where
          Nothing -> returnNone
          Just (Bytecode { opcode = RETURN_VALUE }) -> return ()
          other -> returnNone
-      state <- getBlockState id
-      code <- assemble
-      let stackDepth = 10
-      makeObject (state_names state) (state_constants state) code stackDepth
+      assemble
+      makeObject
 
 newtype BodySuite = BodySuite [StatementSpan]
 
@@ -383,9 +382,14 @@ isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
 -- XXX what about Lambda?
 isPureExpr other = False
 
-makeObject :: NameMap -> ConstantMap -> [Bytecode] -> Word32 -> Compile PyObject
-makeObject names constants code maxStackDepth = do
-   if maxStackDepth > maxBound
+makeObject :: Compile PyObject
+makeObject = do
+   stackDepth <- maxStackDepth 
+   names <- getBlockState state_names
+   constants <- getBlockState state_constants
+   annotatedCode <- getBlockState state_instructions
+   let code = map annotatedCode_bytecode annotatedCode 
+   if stackDepth > maxBound
       -- XXX make a better error message
       then error "Maximum stack depth exceeded"
       else do
@@ -395,7 +399,7 @@ makeObject names constants code maxStackDepth = do
                    { argcount = 0
                    , kwonlyargcount = 0
                    , nlocals = 0
-                   , stacksize = maxStackDepth 
+                   , stacksize = stackDepth 
                    , flags = 0
                    , code = String $ encode code
                    , consts = makeConstants constants

@@ -18,8 +18,8 @@
 
 module StackDepth (maxStackDepth) where
  
+import Monad (Compile (..))
 import Utils (isJump)
-import Types (BlockID, BlockMap, BlockVal (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..))
 import Data.Word (Word32, Word16)
 import Control.Monad.RWS.Strict (RWS (..), runRWS, ask, local, gets, modify, when, unless)
@@ -27,6 +27,140 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
 
+maxStackDepth :: Compile Word32
+maxStackDepth = return 10
+
+type BytecodeMap = Map.Map Word16 [Bytecode]
+
+-- Compute the effect of each opcode on the depth of the stack.
+-- This is used to compute an upper bound on the depth of the stack
+-- for each code object. It is safe to over-estimate the depth of the
+-- effect, but it is unsafe to underestimate it. Over-estimation will
+-- potentially result in the stack being bigger than needed, which would
+-- waste memory but otherwise be safe. Under-estimation will likely result
+-- in the stack being too small and a serious fatal error in the interpreter, such
+-- as segmentation fault (or reading/writing some other part of memory).
+-- Some opcodes have different effect on depth depending on other factors, this function
+-- convservatively takes the largest possible value.
+-- This function is supposed to be identical in behaviour to opcode_stack_effect
+-- in Python/compile.c.
+
+codeStackEffect :: Bytecode -> Word32
+codeStackEffect bytecode@(Bytecode {..}) = 
+   case opcode of
+      POP_TOP -> -1
+      ROT_TWO -> 0
+      ROT_THREE -> 0
+      DUP_TOP -> 1
+      DUP_TOP_TWO -> 2
+      UNARY_POSITIVE -> 0
+      UNARY_NEGATIVE -> 0
+      UNARY_NOT -> 0
+      UNARY_INVERT -> 0
+      SET_ADD -> -1
+      LIST_APPEND -> -1
+      MAP_ADD -> -2
+      BINARY_POWER -> -1
+      BINARY_MULTIPLY -> -1
+      BINARY_MODULO -> -1
+      BINARY_ADD -> -1
+      BINARY_SUBTRACT -> -1
+      BINARY_SUBSCR -> -1
+      BINARY_FLOOR_DIVIDE -> -1
+      BINARY_TRUE_DIVIDE -> -1
+      INPLACE_FLOOR_DIVIDE -> -1
+      INPLACE_TRUE_DIVIDE -> -1
+      INPLACE_ADD -> -1
+      INPLACE_SUBTRACT -> -1
+      INPLACE_MULTIPLY -> -1
+      INPLACE_MODULO -> -1
+      STORE_SUBSCR -> -3
+      STORE_MAP -> -2
+      DELETE_SUBSCR -> -2
+      BINARY_LSHIFT -> -1
+      BINARY_RSHIFT -> -1
+      BINARY_AND -> -1
+      BINARY_XOR -> -1
+      BINARY_OR -> -1
+      INPLACE_POWER -> -1
+      GET_ITER -> 0
+      PRINT_EXPR -> -1
+      LOAD_BUILD_CLASS -> 1
+      INPLACE_LSHIFT -> -1
+      INPLACE_RSHIFT -> -1
+      INPLACE_AND -> -1
+      INPLACE_XOR -> -1
+      INPLACE_OR -> -1
+      BREAK_LOOP -> 0
+      SETUP_WITH -> 7
+      WITH_CLEANUP -> -1 -- Sometimes more
+      STORE_LOCALS -> -1
+      RETURN_VALUE -> -1
+      IMPORT_STAR -> -1
+      YIELD_VALUE -> 0
+      YIELD_FROM -> -1
+      POP_BLOCK -> 0
+      POP_EXCEPT -> 0  -- -3 except if bad bytecode
+      END_FINALLY -> -1 -- or -2 or -3 if exception occurred
+      STORE_NAME -> -1
+      DELETE_NAME -> 0
+      UNPACK_SEQUENCE -> withArg $ \oparg -> oparg - 1
+      UNPACK_EX -> withArg $ \oparg -> (oparg .&. 0xFF) + (oparg `shiftR` 8)
+      FOR_ITER -> 1 -- or -1, at end of iterator
+      STORE_ATTR -> -2
+      DELETE_ATTR -> -1
+      STORE_GLOBAL -> -1
+      DELETE_GLOBAL -> 0
+      LOAD_CONST -> 1
+      LOAD_NAME -> 1
+      BUILD_TUPLE -> withArg $ \oparg -> 1 - oparg
+      BUILD_LIST -> withArg $ \oparg -> 1 - oparg
+      BUILD_SET -> withArg $ \oparg -> 1 - oparg
+      BUILD_MAP -> 1
+      LOAD_ATTR -> 0
+      COMPARE_OP -> -1
+      IMPORT_NAME -> -1
+      IMPORT_FROM -> 1
+      JUMP_FORWARD -> 0
+      JUMP_IF_TRUE_OR_POP -> 0 -- -1 if jump not taken
+      JUMP_IF_FALSE_OR_POP -> 0 -- ditto
+      JUMP_ABSOLUTE -> 0
+      POP_JUMP_IF_FALSE -> -1
+      POP_JUMP_IF_TRUE -> -1
+      LOAD_GLOBAL -> 1
+      CONTINUE_LOOP -> 0
+      SETUP_LOOP -> 0
+      SETUP_EXCEPT -> 6
+      SETUP_FINALLY -> 6 -- can push 3 values for the new exception
+                         -- plus 3 others for the previous exception state
+      LOAD_FAST -> 1
+      STORE_FAST -> -1
+      DELETE_FAST -> 0
+      RAISE_VARARGS -> withArg $ \oparg -> -1 * oparg
+      CALL_FUNCTION -> withArg $ \oparg -> -1 * nargs oparg
+      CALL_FUNCTION_VAR -> withArg $ \oparg -> (-1 * nargs oparg) - 1
+      CALL_FUNCTION_KW -> withArg $ \oparg -> (-1 * nargs oparg) - 1 
+      CALL_FUNCTION_VAR_KW -> withArg $ \oparg -> (-1 * nargs oparg) - 2
+      MAKE_FUNCTION -> withArg $ \oparg -> -1 - (nargs oparg) - ((oparg `shiftR` 16) .&. 0xffff)
+      MAKE_CLOSURE -> withArg $ \oparg -> -2 - (nargs oparg) - ((oparg `shiftR` 16) .&. 0xffff)
+      BUILD_SLICE -> withArg $ \oparg -> if oparg == 3 then -2 else -1
+      LOAD_CLOSURE -> 1
+      LOAD_DEREF -> 1
+      STORE_DEREF -> -1
+      DELETE_DEREF -> 0
+      other -> error $ "unexpected opcode in codeStackEffect: " ++ show bytecode
+   where
+   -- #define NARGS(o) (((o) % 256) + 2*(((o) / 256) % 256)) 
+   nargs :: Word32 -> Word32
+   nargs o = (o `mod` 256) + (2 * ((o `div` 256) `mod` 256))
+   withArg :: (Word32 -> Word32) -> Word32
+   withArg f
+      = case args of
+           Nothing -> error $ "codeStackEffect: " ++ (show opcode) ++ " missing argument"
+           Just (Arg16 word16) -> f $ fromIntegral word16
+           -- other -> error $ "codeStackEffect unexpected opcode argument: " ++ show other
+
+{-
 -- XXX should really type synonym for stack size Word32
 
 -- the highest stack starting depth for each block
@@ -155,130 +289,4 @@ maxStackDepth blockID blockMap =
       let newDepth = depth + 3
       modify $ updateMaxDepth newDepth
       maxStackDepthM newDepth blockID
-
--- Compute the effect of each opcode on the depth of the stack.
--- This is used to compute an upper bound on the depth of the stack
--- for each code object. It is safe to over-estimate the depth of the
--- effect, but it is unsafe to underestimate it. Over-estimation will
--- potentially result in the stack being bigger than needed, which would
--- waste memory but otherwise be safe. Under-estimation will likely result
--- in the stack being too small and a serious fatal error in the interpreter, such
--- as segmentation fault (or reading/writing some other part of memory).
--- Some opcodes have different effect on depth depending on other factors, this function
--- convservatively takes the largest possible value.
--- This function is supposed to be identical in behaviour to opcode_stack_effect
--- in Python/compile.c.
-codeStackEffect :: Bytecode -> Word32
-codeStackEffect bytecode@(Bytecode {..}) = 
-   case opcode of
-      POP_TOP -> -1
-      ROT_TWO -> 0
-      ROT_THREE -> 0
-      DUP_TOP -> 1
-      DUP_TOP_TWO -> 2
-      UNARY_POSITIVE -> 0
-      UNARY_NEGATIVE -> 0
-      UNARY_NOT -> 0
-      UNARY_INVERT -> 0
-      SET_ADD -> -1
-      LIST_APPEND -> -1
-      MAP_ADD -> -2
-      BINARY_POWER -> -1
-      BINARY_MULTIPLY -> -1
-      BINARY_MODULO -> -1
-      BINARY_ADD -> -1
-      BINARY_SUBTRACT -> -1
-      BINARY_SUBSCR -> -1
-      BINARY_FLOOR_DIVIDE -> -1
-      BINARY_TRUE_DIVIDE -> -1
-      INPLACE_FLOOR_DIVIDE -> -1
-      INPLACE_TRUE_DIVIDE -> -1
-      INPLACE_ADD -> -1
-      INPLACE_SUBTRACT -> -1
-      INPLACE_MULTIPLY -> -1
-      INPLACE_MODULO -> -1
-      STORE_SUBSCR -> -3
-      STORE_MAP -> -2
-      DELETE_SUBSCR -> -2
-      BINARY_LSHIFT -> -1
-      BINARY_RSHIFT -> -1
-      BINARY_AND -> -1
-      BINARY_XOR -> -1
-      BINARY_OR -> -1
-      INPLACE_POWER -> -1
-      GET_ITER -> 0
-      PRINT_EXPR -> -1
-      LOAD_BUILD_CLASS -> 1
-      INPLACE_LSHIFT -> -1
-      INPLACE_RSHIFT -> -1
-      INPLACE_AND -> -1
-      INPLACE_XOR -> -1
-      INPLACE_OR -> -1
-      BREAK_LOOP -> 0
-      SETUP_WITH -> 7
-      WITH_CLEANUP -> -1 -- Sometimes more
-      STORE_LOCALS -> -1
-      RETURN_VALUE -> -1
-      IMPORT_STAR -> -1
-      YIELD_VALUE -> 0
-      YIELD_FROM -> -1
-      POP_BLOCK -> 0
-      POP_EXCEPT -> 0  -- -3 except if bad bytecode
-      END_FINALLY -> -1 -- or -2 or -3 if exception occurred
-      STORE_NAME -> -1
-      DELETE_NAME -> 0
-      UNPACK_SEQUENCE -> withArg $ \oparg -> oparg - 1
-      UNPACK_EX -> withArg $ \oparg -> (oparg .&. 0xFF) + (oparg `shiftR` 8)
-      FOR_ITER -> 1 -- or -1, at end of iterator
-      STORE_ATTR -> -2
-      DELETE_ATTR -> -1
-      STORE_GLOBAL -> -1
-      DELETE_GLOBAL -> 0
-      LOAD_CONST -> 1
-      LOAD_NAME -> 1
-      BUILD_TUPLE -> withArg $ \oparg -> 1 - oparg
-      BUILD_LIST -> withArg $ \oparg -> 1 - oparg
-      BUILD_SET -> withArg $ \oparg -> 1 - oparg
-      BUILD_MAP -> 1
-      LOAD_ATTR -> 0
-      COMPARE_OP -> -1
-      IMPORT_NAME -> -1
-      IMPORT_FROM -> 1
-      JUMP_FORWARD -> 0
-      JUMP_IF_TRUE_OR_POP -> 0 -- -1 if jump not taken
-      JUMP_IF_FALSE_OR_POP -> 0 -- ditto
-      JUMP_ABSOLUTE -> 0
-      POP_JUMP_IF_FALSE -> -1
-      POP_JUMP_IF_TRUE -> -1
-      LOAD_GLOBAL -> 1
-      CONTINUE_LOOP -> 0
-      SETUP_LOOP -> 0
-      SETUP_EXCEPT -> 6
-      SETUP_FINALLY -> 6 -- can push 3 values for the new exception
-                         -- plus 3 others for the previous exception state
-      LOAD_FAST -> 1
-      STORE_FAST -> -1
-      DELETE_FAST -> 0
-      RAISE_VARARGS -> withArg $ \oparg -> -1 * oparg
-      CALL_FUNCTION -> withArg $ \oparg -> -1 * nargs oparg
-      CALL_FUNCTION_VAR -> withArg $ \oparg -> (-1 * nargs oparg) - 1
-      CALL_FUNCTION_KW -> withArg $ \oparg -> (-1 * nargs oparg) - 1 
-      CALL_FUNCTION_VAR_KW -> withArg $ \oparg -> (-1 * nargs oparg) - 2
-      MAKE_FUNCTION -> withArg $ \oparg -> -1 - (nargs oparg) - ((oparg `shiftR` 16) .&. 0xffff)
-      MAKE_CLOSURE -> withArg $ \oparg -> -2 - (nargs oparg) - ((oparg `shiftR` 16) .&. 0xffff)
-      BUILD_SLICE -> withArg $ \oparg -> if oparg == 3 then -2 else -1
-      LOAD_CLOSURE -> 1
-      LOAD_DEREF -> 1
-      STORE_DEREF -> -1
-      DELETE_DEREF -> 0
-      other -> error $ "unexpected opcode in codeStackEffect: " ++ show bytecode
-   where
-   -- #define NARGS(o) (((o) % 256) + 2*(((o) / 256) % 256)) 
-   nargs :: Word32 -> Word32
-   nargs o = (o `mod` 256) + (2 * ((o `div` 256) `mod` 256))
-   withArg :: (Word32 -> Word32) -> Word32
-   withArg f
-      = case args of
-           Nothing -> error $ "codeStackEffect: " ++ (show opcode) ++ " missing argument"
-           Just (Arg16 word16) -> f $ fromIntegral word16
-           -- other -> error $ "codeStackEffect unexpected opcode argument: " ++ show other
+-}

@@ -14,7 +14,7 @@
 --
 -----------------------------------------------------------------------------
 module State
-   (setBlockState, getBlockState, initBlockState, initState, 
+   (setBlockState, getBlockState, initBlockState, initState, modifyBlockState,
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
     getFileName, newLabel, compileConstantEmit, labelNextInstruction,
     getObjectName, setObjectName, getLastInstruction, getLabelMap)

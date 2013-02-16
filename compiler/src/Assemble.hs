@@ -16,7 +16,7 @@ module Assemble (assemble) where
  
 import Utils (isJumpBytecode)
 import Types (BlockState (..), AnnotatedCode (..), LabelMap)
-import State (getBlockState, getLabelMap)
+import State (getBlockState, getLabelMap, modifyBlockState)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Control.Monad.Trans (liftIO)
 import Monad (Compile (..))
@@ -24,28 +24,31 @@ import Data.Map as Map (Map, insert, empty, lookup)
 import Data.Word (Word16)
 import Data.List as List (foldl')
 
-assemble :: Compile [Bytecode]
+assemble :: Compile ()
 assemble = do
    annotatedCode <- reverse `fmap` getBlockState state_instructions
    labelMap <- getLabelMap
-   return $ applyLabelMap labelMap annotatedCode
+   let finalAnnotatedCode = applyLabelMap labelMap annotatedCode
+   modifyBlockState $ \s -> s { state_instructions = finalAnnotatedCode }
 
-applyLabelMap :: LabelMap -> [AnnotatedCode] -> [Bytecode]
+applyLabelMap :: LabelMap -> [AnnotatedCode] -> [AnnotatedCode]
 applyLabelMap labelMap code =
    map fixJumpTarget code
    where
-   fixJumpTarget :: AnnotatedCode -> Bytecode
+   fixJumpTarget :: AnnotatedCode -> AnnotatedCode
    fixJumpTarget annotatedCode =
-      case opcode bytecode of
-         JUMP_FORWARD -> relativeTarget bytecode index jumpTarget 
-         SETUP_LOOP -> relativeTarget bytecode index jumpTarget
-         POP_JUMP_IF_FALSE -> absoluteTarget bytecode jumpTarget 
-         POP_JUMP_IF_TRUE -> absoluteTarget bytecode jumpTarget 
-         JUMP_ABSOLUTE -> absoluteTarget bytecode jumpTarget 
-         JUMP_IF_FALSE_OR_POP -> absoluteTarget bytecode jumpTarget
-         JUMP_IF_TRUE_OR_POP -> absoluteTarget bytecode jumpTarget 
-         other -> bytecode
+      annotatedCode { annotatedCode_bytecode = newBytecode }
       where
+      newBytecode =
+         case opcode bytecode of
+            JUMP_FORWARD -> relativeTarget bytecode index jumpTarget 
+            SETUP_LOOP -> relativeTarget bytecode index jumpTarget
+            POP_JUMP_IF_FALSE -> absoluteTarget bytecode jumpTarget 
+            POP_JUMP_IF_TRUE -> absoluteTarget bytecode jumpTarget 
+            JUMP_ABSOLUTE -> absoluteTarget bytecode jumpTarget 
+            JUMP_IF_FALSE_OR_POP -> absoluteTarget bytecode jumpTarget
+            JUMP_IF_TRUE_OR_POP -> absoluteTarget bytecode jumpTarget 
+            other -> bytecode
       bytecode = annotatedCode_bytecode annotatedCode
       index = annotatedCode_index annotatedCode
       jumpTarget =
