@@ -1,3 +1,18 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      : State
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Management of state for the compiler. There is global state which
+-- persist through the whole compilation (such as command line flags), and
+-- their is block state, which is local for the compilation of a block
+-- of code.
+--
+-----------------------------------------------------------------------------
 module State
    (setBlockState, getBlockState, initBlockState, initState, 
     emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,

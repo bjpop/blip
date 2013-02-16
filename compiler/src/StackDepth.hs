@@ -1,4 +1,20 @@
 {-# LANGUAGE RecordWildCards #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : StackDepth
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Compute an upper bound on the stack usage of a block of bytecode. Code
+-- objects in CPython bytecode have their own stack, so the compiler must
+-- say how big it needs to be. It is safe to make the stack too big (but
+-- it would waste memory), but if it is too small then the interpreter will
+-- probably crash (or worse, keep running in an undefined state).
+--
+-----------------------------------------------------------------------------
 
 module StackDepth (maxStackDepth) where
  

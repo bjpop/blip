@@ -1,4 +1,17 @@
 {-# LANGUAGE RecordWildCards #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Utils
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Utility functions which are used in multiple modules, or don't belong
+-- anywhere else.
+--
+-----------------------------------------------------------------------------
 module Utils (isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode) where
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))

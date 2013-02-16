@@ -1,5 +1,17 @@
 {-# LANGUAGE TypeFamilies, 
     TypeSynonymInstances, FlexibleInstances, RecordWildCards #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Main
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Compilation of Python 3 source code into bytecode.
+--
+-----------------------------------------------------------------------------
 
 module Compile (compileFile, CompileConfig (..)) where
 

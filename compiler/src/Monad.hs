@@ -1,4 +1,17 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Monad
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Custom monad support for the compiler.
+--
+-----------------------------------------------------------------------------
+
 module Monad (Compile (..), runCompileMonad)  where
 
 import Types (CompileState (..), BlockState (..))
@@ -16,13 +29,3 @@ instance MonadState CompileState Compile where
 
 runCompileMonad :: Compile a -> CompileState -> IO a
 runCompileMonad (Compile comp) = evalStateT comp
-
-{-
-setBlockState :: BlockState -> Compile ()
-setBlockState blockState = do
-   oldState <- get
-   put $ oldState { state_blockState = blockState }
-
-getBlockState :: Compile BlockState
-getBlockState = gets state_blockState
--}

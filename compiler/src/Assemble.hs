@@ -1,4 +1,16 @@
 {-# LANGUAGE RecordWildCards #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Assemble
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Convert the jump targets in the annotated bytecode to real offsets.
+--
+-----------------------------------------------------------------------------
 
 module Assemble (assemble) where
  

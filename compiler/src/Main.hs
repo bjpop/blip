@@ -1,3 +1,17 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Main
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- The Main module of Blip. Contains the entry point of the compiler, and
+-- handles command line argument parsing.
+--
+-----------------------------------------------------------------------------
+
 module Main where
 
 import System.Exit (exitFailure, exitSuccess)

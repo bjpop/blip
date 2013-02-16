@@ -1,3 +1,15 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Types
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Type definitions which are used in multiple modules.
+--
+-----------------------------------------------------------------------------
 module Types 
    (Identifier, CompileConfig (..), NameID, NameMap
    , ConstantID, ConstantMap, CompileState (..), BlockState (..)
