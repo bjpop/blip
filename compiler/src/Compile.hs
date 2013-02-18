@@ -16,7 +16,7 @@
 module Compile (compileFile, CompileConfig (..)) where
 
 import Prelude hiding (mapM)
-import Utils (isPureExpr)
+import Utils (isPureExpr, isPyObjectExpr)
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -250,7 +250,7 @@ instance Compilable ExprSpan where
       compile ce_false_branch
       labelNextInstruction restLabel
    compile expr@(AST.Tuple {..})
-      | isPureExpr expr =
+      | isPyObjectExpr expr =
            compileConstantEmit $ constantToPyObject expr
       | otherwise = do
            mapM compile tuple_exprs

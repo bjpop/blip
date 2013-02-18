@@ -13,12 +13,29 @@
 --
 -----------------------------------------------------------------------------
 module Utils
-   (isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr)
+   ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
+   , isPyObjectExpr )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
 import Language.Python.Common.AST as AST
    (ExprSpan (..), Expr (..))
+
+-- True if an expression can be represented directly as a PyObject constant.
+isPyObjectExpr :: ExprSpan -> Bool
+isPyObjectExpr (AST.Int {}) = True
+-- XXX not sure about longint
+-- isPyObjectExpr (AST.LongInt {}) = True  
+isPyObjectExpr (AST.Float {}) = True
+-- XXX not sure about imaginary
+-- isPyObjectExpr (AST.Imaginary {}) = True
+isPyObjectExpr (AST.Bool {}) = True
+isPyObjectExpr (AST.None {}) = True
+isPyObjectExpr (AST.ByteStrings {}) = True
+isPyObjectExpr (AST.Strings {}) = True
+isPyObjectExpr (AST.UnicodeStrings {}) = True
+isPyObjectExpr (AST.Tuple { tuple_exprs = exprs }) = all isPyObjectExpr exprs
+isPyObjectExpr _other = False
 
 -- True if evaluating an expression has no observable side effect
 -- Raising an exception is a side-effect, so variables are not pure.
