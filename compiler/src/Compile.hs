@@ -26,8 +26,8 @@ import State
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
-   (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   (Identifier, CompileConfig (..), NameID
+   , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..))
 import Scope (Scope (..), empty )
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
@@ -414,18 +414,11 @@ makeObject = do
                    }
          return obj
 
-makeConstants :: ConstantMap -> PyObject
-makeConstants constantMap = mapToObject constantMap id
+makeConstants :: [PyObject] -> PyObject
+makeConstants = Blip.Tuple . reverse
 
-makeNames :: NameMap -> PyObject
-makeNames nameMap = mapToObject nameMap Unicode
-
-mapToObject :: Map.Map key Word16 -> (key -> PyObject) -> PyObject
-mapToObject theMap keyToObj = 
-   Blip.Tuple $ theObjects
-   where
-   theObjects = map snd $ sort $ 
-      [(identity, keyToObj key) | (key, identity) <- Map.toList theMap]
+makeNames :: [Identifier] -> PyObject
+makeNames = Blip.Tuple . map Unicode . reverse 
 
 returnNone :: Compile ()
 returnNone = compileConstantEmit Blip.None >> emitCodeNoArg RETURN_VALUE

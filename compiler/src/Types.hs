@@ -11,8 +11,8 @@
 --
 -----------------------------------------------------------------------------
 module Types 
-   (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   (Identifier, CompileConfig (..), NameID, NameCache
+   , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap) where
 
 import Blip.Bytecode (Bytecode (..))
@@ -40,10 +40,10 @@ data CompileConfig =
    deriving (Eq, Show)
 
 type NameID = Word16
-type NameMap = Map.Map Identifier NameID
+type NameCache = Map.Map Identifier NameID
 
 type ConstantID = Word16
-type ConstantMap = Map.Map PyObject ConstantID 
+type ConstantCache = Map.Map PyObject ConstantID 
 
 data CompileState = CompileState
    { state_config :: CompileConfig
@@ -57,9 +57,11 @@ data BlockState = BlockState
    { state_label :: !Word16
    , state_instructions :: [AnnotatedCode]
    , state_labelNextInstruction :: !(Maybe Word16) -- maybe label the next emitted instruction
-   , state_constants :: ConstantMap
+   , state_constants :: [PyObject] 
+   , state_constantCache :: ConstantCache
    , state_nextConstantID :: !ConstantID
-   , state_names :: NameMap
+   , state_names :: [Identifier]
+   , state_nameCache :: NameCache
    , state_nextNameID :: !NameID
    , state_objectName :: String
    , state_instruction_index :: !Word16

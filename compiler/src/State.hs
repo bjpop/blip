@@ -22,8 +22,8 @@ module State
 
 import Monad (Compile (..))
 import Types
-   (Identifier, CompileConfig (..), NameID, NameMap
-   , ConstantID, ConstantMap, CompileState (..), BlockState (..)
+   (Identifier, CompileConfig (..), NameID, NameCache
+   , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap)
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
@@ -39,9 +39,11 @@ initBlockState = BlockState
    { state_label = 0
    , state_instructions = []
    , state_labelNextInstruction = Nothing
-   , state_constants = Map.empty
+   , state_constants = [] 
+   , state_constantCache = Map.empty
    , state_nextConstantID = 0
-   , state_names = Map.empty
+   , state_names = []
+   , state_nameCache = Map.empty
    , state_nextNameID = 0
    , state_objectName = ""
    , state_instruction_index = 0
@@ -148,26 +150,42 @@ updateLabelMap label index = do
 compileName :: Identifier -> Compile NameID
 compileName ident = do
    blockState <- getBlockState id
-   let nameMap = state_names blockState
-   case Map.lookup ident nameMap of
+   let nameCache = state_nameCache blockState
+   case Map.lookup ident nameCache of
+      -- We haven't seen this name before
       Nothing -> do
          let nameID = state_nextNameID blockState
-             newNames = Map.insert ident nameID nameMap
-         setBlockState $ blockState { state_nextNameID = nameID + 1, state_names = newNames }
+             newNameCache = Map.insert ident nameID nameCache
+             oldNames = state_names blockState 
+         setBlockState $
+            blockState { state_nextNameID = nameID + 1
+                       , state_nameCache = newNameCache 
+                       , state_names = ident : oldNames }
          return nameID
       Just nameID -> return nameID
 
--- XXX probably only want to consider equality on simple constants, not functions
 compileConstant :: PyObject -> Compile ConstantID
+-- Code objects are not cached to avoid complex equality comparisons
+compileConstant obj@(Code {}) = do
+   oldConstants <- getBlockState state_constants
+   constantID <- getBlockState state_nextConstantID 
+   modifyBlockState $
+      \s -> s { state_constants = obj : oldConstants
+              , state_nextConstantID = constantID + 1 }
+   return constantID
 compileConstant obj = do
    blockState <- getBlockState id
-   let constantMap = state_constants blockState
-   case Map.lookup obj constantMap of
+   let constantCache = state_constantCache blockState
+   case Map.lookup obj constantCache of
+      -- We haven't seen this (non-code) constant before
       Nothing -> do
          let constantID = state_nextConstantID blockState
-             newConstants = Map.insert obj constantID constantMap
+             newConstantCache = Map.insert obj constantID constantCache 
+             oldConstants = state_constants blockState
          setBlockState $ blockState
-            { state_nextConstantID = constantID + 1, state_constants = newConstants }
+            { state_nextConstantID = constantID + 1
+            , state_constantCache = newConstantCache
+            , state_constants = obj : oldConstants }
          return constantID
       Just constantID -> return constantID
 
