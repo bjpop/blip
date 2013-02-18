@@ -12,9 +12,34 @@
 -- anywhere else.
 --
 -----------------------------------------------------------------------------
-module Utils (isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode) where
+module Utils
+   (isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr)
+   where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
+import Language.Python.Common.AST as AST
+   (ExprSpan (..), Expr (..))
+
+-- True if evaluating an expression has no observable side effect
+-- Raising an exception is a side-effect, so variables are not pure.
+isPureExpr :: ExprSpan -> Bool
+isPureExpr (AST.Int {}) = True
+isPureExpr (AST.LongInt {}) = True
+isPureExpr (AST.Float {}) = True
+isPureExpr (AST.Imaginary {}) = True
+isPureExpr (AST.Bool {}) = True
+isPureExpr (AST.None {}) = True
+isPureExpr (AST.ByteStrings {}) = True
+isPureExpr (AST.Strings {}) = True
+isPureExpr (AST.UnicodeStrings {}) = True
+isPureExpr (AST.Tuple { tuple_exprs = exprs }) = all isPureExpr exprs
+isPureExpr (AST.List { list_exprs = exprs }) = all isPureExpr exprs
+isPureExpr (AST.Set { set_exprs = exprs }) = all isPureExpr exprs
+isPureExpr (AST.Paren { paren_expr = expr }) = isPureExpr expr
+isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
+   all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
+-- XXX what about Lambda?
+isPureExpr other = False
 
 isJumpBytecode :: Bytecode -> Bool
 isJumpBytecode (Bytecode {..}) = isJump opcode

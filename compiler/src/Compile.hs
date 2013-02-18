@@ -16,6 +16,7 @@
 module Compile (compileFile, CompileConfig (..)) where
 
 import Prelude hiding (mapM)
+import Utils (isPureExpr)
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -361,6 +362,7 @@ compileComparison (BinaryOp {..}) = do
    comparisonOpCode (GreaterThanEquals {}) = 5 
    comparisonOpCode other = error $ "Unexpected comparison operator: " ++ show operator
  
+{-
 -- True if evaluating an expression has no observable side effect
 -- Raising an exception is a side-effect, so variables are not pure.
 isPureExpr :: ExprSpan -> Bool
@@ -381,6 +383,7 @@ isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
    all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
 -- XXX what about Lambda?
 isPureExpr other = False
+-}
 
 makeObject :: Compile PyObject
 makeObject = do
