@@ -14,6 +14,10 @@
 
 module Blip.Marshal (readPyc, writePyc, PycFile (..), PyObject (..)) where
 
+import Blip.MarshalDouble (bytesToDouble, doubleToBytes)
+import Blip.Bytecode (decode, encode, BytecodeSeq (..))
+import Blip.Pretty (Pretty (..), prettyList, prettyTuple)
+import Control.Applicative ((<$>), (<*>))
 import Data.Map as Map hiding (map, size)
 import Data.Word (Word8, Word32)
 import Data.Binary (Binary (..))
@@ -26,12 +30,9 @@ import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8)
 import Data.Binary.Put (Put, PutM, putWord32le, putLazyByteString, runPutM, putWord8)
 import Data.Int (Int64)
 import Data.Char (chr, ord)
-import Blip.Bytecode (decode, encode, BytecodeSeq (..))
-import Blip.Pretty (Pretty (..), prettyList, prettyTuple)
 import Text.PrettyPrint
    (text, (<+>), ($$), render, empty, integer, (<>), hsep, Doc, parens
    , comma, hcat, vcat, rparen, int, equals, doubleQuotes, brackets, punctuate)
-import Control.Applicative ((<$>), (<*>))
 
 data PycFile =
    PycFile
@@ -69,7 +70,8 @@ data PyObject
         }
    | String { string :: B.ByteString }
    | Tuple { elements :: [PyObject] }
-   | Int { value :: Word32 }
+   | Int { int_value :: Word32 }
+   | Float { float_value :: Double }
    | None
    | Unicode { unicode :: String } -- should be decoded into a String
    | TrueObj
@@ -79,7 +81,8 @@ data PyObject
 instance Pretty PyObject where
    pretty (String {..}) = doubleQuotes $ pretty string
    pretty (Tuple {..}) = prettyTuple $ map pretty elements
-   pretty (Int {..}) = pretty value
+   pretty (Int {..}) = pretty int_value
+   pretty (Float {..}) = pretty float_value
    pretty None = text "None"
    pretty TrueObj = text "True"
    pretty FalseObj = text "False"
@@ -149,7 +152,8 @@ readObject = do
        TRUE -> return TrueObj
        FALSE -> return FalseObj
        UNICODE -> readUnicodeObject
-       _other -> error ("unsupported object " ++ show object_type)
+       BINARY_FLOAT -> readFloatObject
+       _other -> error ("readObject: unsupported object type" ++ show object_type)
 
 writeObject :: PyObject -> PutData
 writeObject object =
@@ -162,6 +166,7 @@ writeObject object =
       Unicode {..} -> writeUnicodeObject object
       TrueObj -> putU8 $ encodeObjectType TRUE
       FalseObj -> putU8 $ encodeObjectType FALSE
+      Float {..} -> writeFloatObject object
 
 writeObjectType :: ObjectType -> PutData
 writeObjectType = putU8 . encodeObjectType
@@ -209,7 +214,15 @@ readIntObject = Int <$> getU32
 
 writeIntObject :: PyObject -> PutData
 writeIntObject (Int {..}) = 
-   writeObjectType INT >> putU32 value
+   writeObjectType INT >> putU32 int_value
+
+readFloatObject :: GetData PyObject
+readFloatObject = Float <$> getDouble
+
+writeFloatObject :: PyObject -> PutData
+writeFloatObject (Float {..}) = 
+   -- writeObjectType BINARY_FLOAT >> putE float_value
+   writeObjectType BINARY_FLOAT >> putDouble float_value
 
 readUnicodeObject :: GetData PyObject
 readUnicodeObject = do
@@ -304,6 +317,11 @@ type GetData a = ErrorT String Get a
 getE :: Binary a => GetData a
 getE = lift get
 
+getDouble :: GetData Double
+getDouble = do
+   bs <- replicateM 8 getU8
+   return $ bytesToDouble bs
+
 getBS :: Int64 -> GetData B.ByteString
 getBS = lift . getLazyByteString
 
@@ -311,6 +329,7 @@ getBS = lift . getLazyByteString
 getU8 :: GetData Word8
 getU8 = lift getWord8
 
+-- XXX is it always little endian?
 -- read an unsigned 32 bit word
 getU32 :: GetData Word32
 getU32 = lift getWord32le
@@ -327,6 +346,12 @@ runGetDataCheck g b =
 -- utilities for writing binary data to a sequence of bytes
 type PutData = ErrorT String PutM ()
 
+putE :: Binary a => a -> PutData
+putE = lift . put
+
+putDouble :: Double -> PutData
+putDouble d = mapM_ putU8 $ doubleToBytes d
+
 -- write a bytestring
 putBS :: B.ByteString -> PutData
 putBS = lift . putLazyByteString
@@ -335,6 +360,7 @@ putBS = lift . putLazyByteString
 putU8 :: Word8 -> PutData
 putU8 = lift . putWord8
 
+-- XXX is it always little endian?
 -- write an unsigned 32 bit word
 putU32 :: Word32 -> PutData
 putU32 = lift . putWord32le

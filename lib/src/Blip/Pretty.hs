@@ -64,6 +64,9 @@ instance Pretty Int where
 instance Pretty Integer where
    pretty = integer 
 
+instance Pretty Double where
+   pretty = double
+
 instance (Pretty a, Pretty b) => Pretty (a, b) where
    pretty (x, y) = text "(" <> pretty x <> text "," <+> pretty y <> text ")"
 

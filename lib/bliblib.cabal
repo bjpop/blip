@@ -17,6 +17,7 @@ Library {
    exposed-modules:
       Blip.Bytecode,
       Blip.Marshal,
+      Blip.MarshalDouble,
       Blip.Pretty,
       Blip.Version
    build-depends:
