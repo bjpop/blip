@@ -1,3 +1,5 @@
+-- XXX not sure if this is complete or immune from endian issues.
+
 module Blip.MarshalDouble (doubleToBytes, bytesToDouble) where
 
 import Foreign.Storable (peek, peekByteOff, pokeByteOff)
