@@ -203,6 +203,7 @@ compileGuard restLabel (expr, stmt) = do
 
 constantToPyObject :: ExprSpan -> PyObject
 constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value
+constantToPyObject (AST.Float {..}) = Blip.Float $ float_value 
 constantToPyObject (AST.Bool { bool_value = True }) = Blip.TrueObj
 constantToPyObject (AST.Bool { bool_value = False }) = Blip.FalseObj
 constantToPyObject (AST.None {}) = Blip.None
@@ -225,16 +226,14 @@ instance Compilable ExprSpan where
    compile (Var { var_ident = ident }) = do
       nameID <- compileName $ ident_string ident
       emitCodeArg LOAD_NAME nameID
-   compile expr@(AST.Strings {..}) =
+   compile expr@(AST.Strings {}) =
       compileConstantEmit $ constantToPyObject expr 
-   compile expr@(AST.Int {..}) =
+   compile expr@(AST.Int {}) =
       compileConstantEmit $ constantToPyObject expr
-{-
    -- Float not yet defined in Blip
-   compile (AST.Float {..}) =
-      compileConstantEmit $ Blip.Float $ float_value
--}
-   compile expr@(AST.Bool {..}) =
+   compile expr@(AST.Float {}) =
+      compileConstantEmit $ constantToPyObject expr
+   compile expr@(AST.Bool {}) =
       compileConstantEmit $ constantToPyObject expr
    compile expr@(AST.None {}) =
       compileConstantEmit $ constantToPyObject expr
