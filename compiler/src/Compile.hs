@@ -1,5 +1,5 @@
-{-# LANGUAGE TypeFamilies, 
-    TypeSynonymInstances, FlexibleInstances, RecordWildCards #-}
+{-# LANGUAGE TypeFamilies, TypeSynonymInstances, FlexibleInstances,
+    PatternGuards, RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      : Main
@@ -22,8 +22,8 @@ import ProgName (progName)
 import State
    (setBlockState, getBlockState, initBlockState, initState,
     emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit,
-    getFileName, newLabel, labelNextInstruction, getObjectName,
-    setObjectName, getLastInstruction)
+    compileConstant, getFileName, newLabel, labelNextInstruction,
+    getObjectName, setObjectName, getLastInstruction)
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -183,7 +183,9 @@ instance Compilable BodySuite where
          Fun {..} -> do
             let funName = ident_string $ fun_name
             nameID <- compileName funName
-            funBodyObj <- nestedBlock funName $ compile $ Body fun_body
+            funBodyObj <- nestedBlock funName $ do
+               compileFunDocString fun_body
+               compile $ Body fun_body
             compileConstantEmit funBodyObj
             compileConstantEmit $ Unicode funName
             emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
@@ -191,6 +193,18 @@ instance Compilable BodySuite where
             emitCodeArg STORE_NAME nameID
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
+
+-- Check for a docstring in the first statement of a function body.
+-- The first constant in the corresponding code object is inspected
+-- by the interpreter for the docstring. If their is no docstring
+-- then the first constant must be None
+compileFunDocString :: [StatementSpan] -> Compile ()
+compileFunDocString (firstStmt:_stmts)
+   | StmtExpr {..} <- firstStmt,
+     Strings {} <- stmt_expr
+        = do compileConstant $ constantToPyObject stmt_expr
+             return ()
+   | otherwise = compileConstant Blip.None >> return ()
 
 compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
 compileGuard restLabel (expr, stmt) = do
