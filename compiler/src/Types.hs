@@ -13,13 +13,32 @@
 module Types 
    (Identifier, CompileConfig (..), NameID, NameCache
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
-   , AnnotatedCode (..), LabelMap) where
+   , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
+   , DefinitionScope (..), NestedScope (..)) where
 
+import Data.Set (Set (..))
 import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+
+type VarSet = Set Identifier
+
+data DefinitionScope
+   = DefinitionScope
+     { definitionScope_locals :: !VarSet
+     , definitionScope_freeVars :: !VarSet
+     , definitionScope_cellVars :: !VarSet
+     }
+     deriving Show
+
+newtype NestedScope
+   = NestedScope (Map.Map Identifier (DefinitionScope, NestedScope))
+   deriving Show
+
+data Dumpable = DumpScope {- | something else -}
+   deriving (Eq, Ord, Show)
 
 data AnnotatedCode
    = Labelled 
@@ -36,6 +55,7 @@ type Identifier = String -- a variable name
 data CompileConfig =
    CompileConfig
    { compileConfig_magic :: Word32
+   , compileConfig_dumps :: Set Dumpable
    }
    deriving (Eq, Show)
 
@@ -49,6 +69,8 @@ data CompileState = CompileState
    { state_config :: CompileConfig
    , state_blockState :: BlockState
    , state_filename :: FilePath
+   , state_globals :: VarSet
+   -- , state_nestedScopeStack :: [(DefinitionScope, NestedScope)]
    }
 
 type LabelMap = Map.Map Word16 Word16
@@ -66,5 +88,9 @@ data BlockState = BlockState
    , state_objectName :: String
    , state_instruction_index :: !Word16
    , state_labelMap :: LabelMap
+   , state_nestedScope :: NestedScope
+   , state_locals :: VarSet
+   , state_freeVars :: VarSet
+   , state_cellVars :: VarSet
    }
    deriving (Show)

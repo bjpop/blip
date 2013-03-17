@@ -13,29 +13,30 @@
 --
 -----------------------------------------------------------------------------
 
-module Compile (compileFile, CompileConfig (..)) where
+module Compile (compileFile) where
 
 import Prelude hiding (mapM)
 import Utils (isPureExpr, isPyObjectExpr)
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
-   (setBlockState, getBlockState, initBlockState, initState,
-    emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit,
-    compileConstant, getFileName, newLabel, labelNextInstruction,
-    getObjectName, setObjectName, getLastInstruction)
+   ( setBlockState, getBlockState, initBlockState, initState
+   , emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit
+   , compileConstant, getFileName, newLabel, labelNextInstruction
+   , getObjectName, setObjectName, getLastInstruction, getGlobals
+   , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    (Identifier, CompileConfig (..), NameID
    , ConstantID, CompileState (..), BlockState (..)
-   , AnnotatedCode (..))
-import Scope (Scope (..), empty )
+   , AnnotatedCode (..), Dumpable (..))
+import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
 import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
-   (ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
+   ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
    , OpSpan, Op (..))
 import Language.Python.Common (prettyText)
@@ -49,9 +50,10 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort)
-import Control.Monad (unless, forM_)
+import Control.Monad (unless, forM_, when)
 import Control.Exception (try)
 import System.IO.Error (IOError, userError, ioError)
+import Control.Monad.Trans (liftIO)
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile
@@ -69,8 +71,12 @@ compileFile config path = do
       modifiedTime <- getModificationTime path
       let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
       pyModule <- parseAndCheckErrors fileContents path
-      pyc <- compileModule config (fromIntegral modSeconds)
-                (fromIntegral sizeInBytes) path pyModule
+      let (globals, nestedScope) = topScope pyModule
+      canonicalPath <- canonicalizePath path 
+      let state = initState globals emptyDefinitionScope
+                     nestedScope config canonicalPath
+      pyc <- compileModule state (fromIntegral modSeconds)
+                (fromIntegral sizeInBytes) pyModule
       let pycFilePath = takeBaseName path <.> ".pyc"
       pycHandle <- openFile pycFilePath WriteMode 
       writePyc pycHandle pyc
@@ -87,38 +93,43 @@ parseAndCheckErrors fileContents sourceName =
       Left e -> error $ "parse error: " ++ prettyText e
       Right (pyModule, _comments) -> return pyModule
 
-compileModule :: CompileConfig -> Word32 -> Word32 -> FilePath -> ModuleSpan -> IO PycFile
-compileModule config pyFileModifiedTime pyFileSizeBytes pyFileName mod = do
-   canonicalPath <- canonicalizePath pyFileName
-   let state = initState config canonicalPath
+compileModule :: CompileState
+              -> Word32         -- modification time
+              -> Word32         -- size in bytes
+              -> ModuleSpan     -- AST
+              -> IO PycFile
+compileModule state pyFileModifiedTime pyFileSizeBytes mod = do
    obj <- compiler mod state
    return $ PycFile
-      { magic = compileConfig_magic config 
+      { magic = compileConfig_magic $ state_config state
       , modified_time = pyFileModifiedTime 
       , size = pyFileSizeBytes
       , object = obj }
 
-{-
-instance Compilable a => Compilable [a] where
-   type CompileResult [a] = [CompileResult a]
-   compile = mapM compile
-
-instance Compilable a => Compilable (Maybe a) where
-   type CompileResult (Maybe a) = Maybe (CompileResult a)
-   compile = mapM compile
--}
-
 instance Compilable ModuleSpan where
    type CompileResult ModuleSpan = PyObject
-   compile (Module stmts) =
-      nestedBlock "<module>" $ compile $ Body stmts
+   compile (Module stmts) = do
+      maybeDumpScope 
+      -- nestedBlock "<module>" $ compile $ Body stmts
+      setObjectName "<module>"
+      compile $ Body stmts
 
-nestedBlock :: String -> Compile a -> Compile a
+maybeDumpScope :: Compile ()
+maybeDumpScope = do
+   ifDump DumpScope $ do
+      globals <- getGlobals
+      nestedScope <- getNestedScope
+      liftIO $ putStrLn "Variable Scope:"
+      liftIO $ putStrLn $ renderScope (globals, nestedScope)
+
+nestedBlock :: Identifier -> Compile a -> Compile a
 nestedBlock objectName comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
-   -- reset new block state to initial values
-   setBlockState initBlockState
+   -- set the new block state to initial values, and the
+   -- scope of the current definition
+   (definitionScope, nestedScope) <- lookupNestedScope objectName
+   setBlockState $ initBlockState definitionScope nestedScope
    -- set the new object name
    setObjectName objectName
    -- run the nested computation
@@ -191,6 +202,8 @@ instance Compilable BodySuite where
             emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
                                         -- appears to be related to keyword args, and defaults
             emitCodeArg STORE_NAME nameID
+         NonLocal {} -> return ()
+         Global {} -> return ()
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
 

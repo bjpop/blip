@@ -9,22 +9,25 @@
 --
 -- Management of state for the compiler. There is global state which
 -- persist through the whole compilation (such as command line flags), and
--- their is block state, which is local for the compilation of a block
+-- there is block state, which is local for the compilation of a block
 -- of code.
 --
 -----------------------------------------------------------------------------
 module State
-   (setBlockState, getBlockState, initBlockState, initState, modifyBlockState,
-    emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant,
-    getFileName, newLabel, compileConstantEmit, labelNextInstruction,
-    getObjectName, setObjectName, getLastInstruction, getLabelMap)
+   ( setBlockState, getBlockState, initBlockState, initState, modifyBlockState
+   , emitCode, emitCodeNoArg, emitCodeArg, compileName, compileConstant
+   , getFileName, newLabel, compileConstantEmit, labelNextInstruction
+   , getObjectName, setObjectName, getLastInstruction, getLabelMap, getGlobals
+   , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
+   , lookupNestedScope )
    where
 
 import Monad (Compile (..))
 import Types
    (Identifier, CompileConfig (..), NameID, NameCache
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
-   , AnnotatedCode (..), LabelMap)
+   , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
+   , DefinitionScope (..) )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -34,8 +37,19 @@ import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
 import Control.Monad.State.Class (MonadState (..))
 
-initBlockState :: BlockState
-initBlockState = BlockState
+emptyVarSet :: VarSet
+emptyVarSet = Set.empty
+
+emptyDefinitionScope :: DefinitionScope
+emptyDefinitionScope =
+   DefinitionScope
+   { definitionScope_locals = emptyVarSet
+   , definitionScope_freeVars = emptyVarSet
+   , definitionScope_cellVars = emptyVarSet
+   }
+
+initBlockState :: DefinitionScope -> NestedScope -> BlockState
+initBlockState definitionScope nestedScope = BlockState
    { state_label = 0
    , state_instructions = []
    , state_labelNextInstruction = Nothing
@@ -48,6 +62,10 @@ initBlockState = BlockState
    , state_objectName = ""
    , state_instruction_index = 0
    , state_labelMap = Map.empty
+   , state_nestedScope = nestedScope
+   , state_locals = definitionScope_locals definitionScope 
+   , state_freeVars = definitionScope_freeVars definitionScope 
+   , state_cellVars = definitionScope_cellVars definitionScope 
    }
 
 incInstructionIndex :: Bytecode -> Compile Word16
@@ -57,11 +75,12 @@ incInstructionIndex bytecode = do
    modifyBlockState $ \s -> s { state_instruction_index = nextIndex }
    return currentIndex
 
-initState :: CompileConfig -> FilePath -> CompileState
-initState config pyFilename = CompileState
+initState :: VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
+initState globals definitionScope nestedScope config pyFilename = CompileState
    { state_config = config
-   , state_blockState = initBlockState
+   , state_blockState = initBlockState definitionScope nestedScope
    , state_filename = pyFilename
+   , state_globals = globals
    }
 
 -- get the most recently added instruction to the state
@@ -73,6 +92,37 @@ getLastInstruction = do
       -- instructions are in reverse order, so the most recent
       -- one is at the front of the list
       else return $ Just $ annotatedCode_bytecode $ head instructions
+
+ifDump :: Dumpable -> Compile () -> Compile ()
+ifDump dumpable action = do
+   state <- get
+   if dumpable `Set.member` (compileConfig_dumps $ state_config state)
+      then action
+      else return () 
+
+getGlobals :: Compile VarSet
+getGlobals = gets state_globals
+
+-- get the nested scope for the current block
+getNestedScope :: Compile NestedScope
+getNestedScope = getBlockState state_nestedScope
+
+lookupNestedScope :: Identifier -> Compile (DefinitionScope, NestedScope)
+lookupNestedScope name = do
+   NestedScope nestedScope <- getNestedScope
+   case Map.lookup name nestedScope of
+      Just scope -> return scope
+      -- this case should never happen
+      Nothing -> error $ "no scope found for: " ++ name
+   
+{-
+   nestedScopeStack <- gets state_nestedScopeStack
+   case nestedScopeStack of
+      (_definitionScope, nestedScope):_rest -> return nestedScope
+      -- the nestedScope stack should never be empty
+      -- so the following case should never happen
+      [] -> error "nested scope stack is empty"
+-}
 
 getFileName :: Compile FilePath
 getFileName = gets state_filename
