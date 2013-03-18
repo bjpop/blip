@@ -62,6 +62,10 @@ class Compilable a where
    type CompileResult a :: *
    compile :: a -> Compile (CompileResult a)
 
+instance Compilable a => Compilable [a] where
+   type CompileResult [a] = [CompileResult a]
+   compile = mapM compile
+
 compileFile :: CompileConfig -> FilePath -> IO ()
 compileFile config path = do
    r <- try $ do
@@ -110,7 +114,6 @@ instance Compilable ModuleSpan where
    type CompileResult ModuleSpan = PyObject
    compile (Module stmts) = do
       maybeDumpScope 
-      -- nestedBlock "<module>" $ compile $ Body stmts
       setObjectName "<module>"
       compile $ Body stmts
 
@@ -144,7 +147,7 @@ newtype Body = Body [StatementSpan]
 instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
-      compile $ BodySuite stmts
+      compile stmts
       -- if the last instruction is not a return, then return None
       maybeLastInstruction <- getLastInstruction
       case maybeLastInstruction of
@@ -154,8 +157,56 @@ instance Compilable Body where
       assemble
       makeObject
 
-newtype BodySuite = BodySuite [StatementSpan]
+instance Compilable StatementSpan where
+   type CompileResult StatementSpan = ()
+   compile (Assign [Var ident _] e _) = do
+      compile e
+      nameID <- compileName $ ident_string ident
+      emitCodeArg STORE_NAME nameID
+   compile (Return { return_expr = Nothing }) = returnNone
+   compile (Return { return_expr = Just expr }) =  
+      compile expr >> emitCodeNoArg RETURN_VALUE
+   compile (Pass {}) = return ()
+   compile (StmtExpr {..}) = 
+      unless (isPureExpr stmt_expr) $ 
+         compile stmt_expr >> emitCodeNoArg POP_TOP
+   compile (Conditional {..}) = do
+      restLabel <- newLabel
+      mapM_ (compileGuard restLabel) cond_guards 
+      compile cond_else
+      labelNextInstruction restLabel
+   compile (While {..}) = do
+      startLoop <- newLabel
+      endLoop <- newLabel
+      anchor <- newLabel
+      emitCodeArg SETUP_LOOP endLoop
+      labelNextInstruction startLoop
+      compile while_cond
+      emitCodeArg POP_JUMP_IF_FALSE anchor
+      compile while_body
+      emitCodeArg JUMP_ABSOLUTE startLoop
+      labelNextInstruction anchor 
+      emitCodeNoArg POP_BLOCK
+      compile while_else
+      labelNextInstruction endLoop
+   compile (Fun {..}) = do
+      let funName = ident_string $ fun_name
+      nameID <- compileName funName
+      funBodyObj <- nestedBlock funName $ do
+         compileFunDocString fun_body
+         compile $ Body fun_body
+      compileConstantEmit funBodyObj
+      compileConstantEmit $ Unicode funName
+      emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
+                                  -- appears to be related to keyword args, and defaults
+      emitCodeArg STORE_NAME nameID
+   compile (NonLocal {}) = return ()
+   compile (Global {}) = return ()
+   compile other = error ("Unsupported statement " ++ show other) 
 
+-- newtype BodySuite = BodySuite [StatementSpan]
+
+{-
 instance Compilable BodySuite where
    type CompileResult BodySuite = ()
    compile (BodySuite []) = return () 
@@ -206,6 +257,7 @@ instance Compilable BodySuite where
          Global {} -> return ()
          _other -> error ("Unsupported statement " ++ show s) 
       compile $ BodySuite ss
+-}
 
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
@@ -224,7 +276,7 @@ compileGuard restLabel (expr, stmt) = do
    compile expr
    falseLabel <- newLabel
    emitCodeArg POP_JUMP_IF_FALSE falseLabel
-   compile $ BodySuite stmt
+   compile stmt
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
 
