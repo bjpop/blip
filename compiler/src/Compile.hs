@@ -117,14 +117,6 @@ instance Compilable ModuleSpan where
       setObjectName "<module>"
       compile $ Body stmts
 
-maybeDumpScope :: Compile ()
-maybeDumpScope = do
-   ifDump DumpScope $ do
-      globals <- getGlobals
-      nestedScope <- getNestedScope
-      liftIO $ putStrLn "Variable Scope:"
-      liftIO $ putStrLn $ renderScope (globals, nestedScope)
-
 nestedBlock :: Identifier -> Compile a -> Compile a
 nestedBlock objectName comp = do
    -- save the current block state
@@ -204,61 +196,6 @@ instance Compilable StatementSpan where
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
 
--- newtype BodySuite = BodySuite [StatementSpan]
-
-{-
-instance Compilable BodySuite where
-   type CompileResult BodySuite = ()
-   compile (BodySuite []) = return () 
-   compile (BodySuite (s:ss)) = do
-      case s of
-         Assign [Var ident _] e _ -> do
-            compile e
-            nameID <- compileName $ ident_string ident
-            emitCodeArg STORE_NAME nameID
-         Return { return_expr = Nothing } -> returnNone
-         Return { return_expr = Just expr } ->
-            compile expr >> emitCodeNoArg RETURN_VALUE
-         Pass {} -> return ()
-         StmtExpr {..} -> 
-            unless (isPureExpr stmt_expr) $ 
-               compile stmt_expr >> emitCodeNoArg POP_TOP
-         Conditional {..} -> do
-            restLabel <- newLabel
-            mapM_ (compileGuard restLabel) cond_guards 
-            compile $ BodySuite cond_else
-            labelNextInstruction restLabel
-         While {..} -> do
-            startLoop <- newLabel
-            endLoop <- newLabel
-            anchor <- newLabel
-            emitCodeArg SETUP_LOOP endLoop
-            labelNextInstruction startLoop
-            compile while_cond
-            emitCodeArg POP_JUMP_IF_FALSE anchor
-            compile $ BodySuite while_body
-            emitCodeArg JUMP_ABSOLUTE startLoop
-            labelNextInstruction anchor 
-            emitCodeNoArg POP_BLOCK
-            compile $ BodySuite while_else
-            labelNextInstruction endLoop
-         Fun {..} -> do
-            let funName = ident_string $ fun_name
-            nameID <- compileName funName
-            funBodyObj <- nestedBlock funName $ do
-               compileFunDocString fun_body
-               compile $ Body fun_body
-            compileConstantEmit funBodyObj
-            compileConstantEmit $ Unicode funName
-            emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
-                                        -- appears to be related to keyword args, and defaults
-            emitCodeArg STORE_NAME nameID
-         NonLocal {} -> return ()
-         Global {} -> return ()
-         _other -> error ("Unsupported statement " ++ show s) 
-      compile $ BodySuite ss
--}
-
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
 -- by the interpreter for the docstring. If their is no docstring
@@ -309,7 +246,6 @@ instance Compilable ExprSpan where
       compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.Int {}) =
       compileConstantEmit $ constantToPyObject expr
-   -- Float not yet defined in Blip
    compile expr@(AST.Float {}) =
       compileConstantEmit $ constantToPyObject expr
    compile expr@(AST.Bool {}) =
@@ -333,7 +269,6 @@ instance Compilable ExprSpan where
       | otherwise = do
            mapM compile tuple_exprs
            emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
-   -- XXX Why not handle the constant case like Tuple?
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
@@ -343,7 +278,6 @@ instance Compilable ExprSpan where
    compile expr@(Dictionary {..}) = do
       emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
       forM_ dict_mappings $ \(key, value) -> do
-         -- yes, we compile the value first, then the key
          compile value
          compile key
          emitCodeNoArg STORE_MAP
@@ -440,29 +374,6 @@ compileComparison (BinaryOp {..}) = do
    comparisonOpCode (GreaterThanEquals {}) = 5 
    comparisonOpCode other = error $ "Unexpected comparison operator: " ++ show operator
  
-{-
--- True if evaluating an expression has no observable side effect
--- Raising an exception is a side-effect, so variables are not pure.
-isPureExpr :: ExprSpan -> Bool
-isPureExpr (AST.Int {}) = True
-isPureExpr (AST.LongInt {}) = True
-isPureExpr (AST.Float {}) = True
-isPureExpr (AST.Imaginary {}) = True
-isPureExpr (AST.Bool {}) = True
-isPureExpr (AST.None {}) = True
-isPureExpr (AST.ByteStrings {}) = True
-isPureExpr (AST.Strings {}) = True
-isPureExpr (AST.UnicodeStrings {}) = True
-isPureExpr (AST.Tuple { tuple_exprs = exprs }) = all isPureExpr exprs 
-isPureExpr (AST.List { list_exprs = exprs }) = all isPureExpr exprs 
-isPureExpr (AST.Set { set_exprs = exprs }) = all isPureExpr exprs 
-isPureExpr (AST.Paren { paren_expr = expr }) = isPureExpr expr
-isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
-   all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
--- XXX what about Lambda?
-isPureExpr other = False
--}
-
 makeObject :: Compile PyObject
 makeObject = do
    stackDepth <- maxStackDepth 
@@ -503,3 +414,12 @@ makeNames = Blip.Tuple . map Unicode . reverse
 
 returnNone :: Compile ()
 returnNone = compileConstantEmit Blip.None >> emitCodeNoArg RETURN_VALUE
+
+maybeDumpScope :: Compile ()
+maybeDumpScope = do
+   ifDump DumpScope $ do
+      globals <- getGlobals
+      nestedScope <- getNestedScope
+      liftIO $ putStrLn "Variable Scope:"
+      liftIO $ putStrLn $ renderScope (globals, nestedScope)
+
