@@ -7,6 +7,7 @@
 
 .PHONY : all
 all:
+	cabal configure
 	cabal build
 
 .PHONY : clean
