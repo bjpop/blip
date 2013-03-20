@@ -21,16 +21,17 @@ import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
    ( setBlockState, getBlockState, initBlockState, initState
-   , emitCodeNoArg, emitCodeArg, compileName, compileConstantEmit
+   , emitCodeNoArg, emitCodeArg, compileConstantEmit
    , compileConstant, getFileName, newLabel, labelNextInstruction
    , getObjectName, setObjectName, getLastInstruction, getGlobals
-   , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope )
+   , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
+   , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
-   (Identifier, CompileConfig (..), NameID
+   (Identifier, CompileConfig (..)
    , ConstantID, CompileState (..), BlockState (..)
-   , AnnotatedCode (..), Dumpable (..))
+   , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -153,8 +154,8 @@ instance Compilable StatementSpan where
    type CompileResult StatementSpan = ()
    compile (Assign [Var ident _] e _) = do
       compile e
-      nameID <- compileName $ ident_string ident
-      emitCodeArg STORE_NAME nameID
+      varInfo <- lookupVar $ ident_string ident
+      emitWriteVar varInfo
    compile (Return { return_expr = Nothing }) = returnNone
    compile (Return { return_expr = Just expr }) =  
       compile expr >> emitCodeNoArg RETURN_VALUE
@@ -183,7 +184,7 @@ instance Compilable StatementSpan where
       labelNextInstruction endLoop
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
-      nameID <- compileName funName
+      varInfo <- lookupVar funName
       funBodyObj <- nestedBlock funName $ do
          compileFunDocString fun_body
          compile $ Body fun_body
@@ -191,7 +192,7 @@ instance Compilable StatementSpan where
       compileConstantEmit $ Unicode funName
       emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
                                   -- appears to be related to keyword args, and defaults
-      emitCodeArg STORE_NAME nameID
+      emitWriteVar varInfo
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
@@ -240,8 +241,9 @@ constantToPyObject (AST.Strings {..}) =
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
    compile (Var { var_ident = ident }) = do
-      nameID <- compileName $ ident_string ident
-      emitCodeArg LOAD_NAME nameID
+      varInfo <- lookupVar $ ident_string ident
+      emitReadVar varInfo
+      -- emitCodeArg LOAD_NAME nameID
    compile expr@(AST.Strings {}) =
       compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.Int {}) =
@@ -380,7 +382,12 @@ makeObject = do
    names <- getBlockState state_names
    constants <- getBlockState state_constants
    annotatedCode <- getBlockState state_instructions
+   freeVars <- getBlockState state_freeVars
+   cellVars <- getBlockState state_cellVars
+   localVars <- getBlockState state_locals
+   argcount <- getBlockState state_argcount
    let code = map annotatedCode_bytecode annotatedCode 
+   let localVarNames = map Unicode $ indexedVarSetKeys localVars
    if stackDepth > maxBound
       -- XXX make a better error message
       then error "Maximum stack depth exceeded"
@@ -388,23 +395,27 @@ makeObject = do
          pyFileName <- getFileName
          objectName <- getObjectName
          let obj = Code
-                   { argcount = 0
+                   { argcount = argcount
                    , kwonlyargcount = 0
-                   , nlocals = 0
+                   , nlocals = fromIntegral $ length localVarNames
                    , stacksize = stackDepth 
                    , flags = 0
                    , code = String $ encode code
                    , consts = makeConstants constants
                    , names = makeNames names
-                   , varnames = Blip.Tuple []
-                   , freevars = Blip.Tuple [] 
-                   , cellvars = Blip.Tuple []
+                   , varnames = Blip.Tuple localVarNames
+                   , freevars = makeVarSetTuple freeVars
+                   , cellvars = makeVarSetTuple cellVars
                    , filename = Unicode pyFileName
                    , name = Unicode objectName
                    , firstlineno = 0
                    , lnotab = String B.empty
                    }
          return obj
+   where
+   makeVarSetTuple :: IndexedVarSet -> PyObject
+   makeVarSetTuple varSet =
+      Blip.Tuple $ map Unicode $ indexedVarSetKeys varSet
 
 makeConstants :: [PyObject] -> PyObject
 makeConstants = Blip.Tuple . reverse
@@ -422,4 +433,3 @@ maybeDumpScope = do
       nestedScope <- getNestedScope
       liftIO $ putStrLn "Variable Scope:"
       liftIO $ putStrLn $ renderScope (globals, nestedScope)
-

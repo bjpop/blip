@@ -109,9 +109,17 @@ instance Pretty NestedScope where
 
 instance Pretty DefinitionScope where
    pretty (DefinitionScope {..}) =
+      -- text "params:" <+> hsep (map text definitionScope_params) $$
+      prettyVarList "params:" definitionScope_params $$
       prettyVarSet "locals:" definitionScope_locals $$
       prettyVarSet "freevars:" definitionScope_freeVars $$
       prettyVarSet "cellvars:" definitionScope_cellVars
+
+prettyVarList :: String -> [Identifier] -> Doc
+prettyVarList label list 
+   | length list == 0 = Pretty.empty
+   | otherwise =
+        text label <+> (hsep $ map text list)
 
 prettyVarSet :: String -> VarSet -> Doc
 prettyVarSet label varSet
@@ -134,11 +142,11 @@ data Definition = DefStmt StatementSpan | DefLambda ExprSpan
 
 data Usage =
    Usage
-   { usage_params :: !VarSet     -- variables which are parameters to the function
-   , usage_assigned :: !VarSet   -- variables assigned to (written to) in this scope
-   , usage_nonlocals :: !VarSet  -- variables declared nonlocal in this scope
-   , usage_globals :: !VarSet    -- variables declared global in this scope
-   , usage_referenced :: !VarSet -- variables referred to (read from) in this scope
+   { usage_params :: ![Identifier] -- variables which are parameters to the function
+   , usage_assigned :: !VarSet     -- variables assigned to (written to) in this scope
+   , usage_nonlocals :: !VarSet    -- variables declared nonlocal in this scope
+   , usage_globals :: !VarSet      -- variables declared global in this scope
+   , usage_referenced :: !VarSet   -- variables referred to (read from) in this scope
    , usage_definitions :: ![Definition] -- locally defined lambdas, classes, functions
    }
 
@@ -161,7 +169,7 @@ nestedScope (NestedScope scope) (DefStmt (Fun {..})) = do
                       varUsage fun_result_annotation
        locals = (usage_assigned `Set.difference` 
                  usage_globals `Set.difference`
-                 usage_nonlocals) `Set.union` usage_params
+                 usage_nonlocals) `Set.union` (Set.fromList usage_params)
    thisNestedScope <- local (Set.union locals) $
          foldM nestedScope emptyNestedScope usage_definitions
    modify $ Set.union usage_globals
@@ -184,7 +192,8 @@ nestedScope (NestedScope scope) (DefStmt (Fun {..})) = do
        freeVars = directFreeVars `Set.union` indirectFreeVars
        thisDefinitionScope =
           DefinitionScope
-          { definitionScope_locals = locals
+          { definitionScope_params = usage_params
+          , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = cellVars }
        newScope = Map.insert (fromIdentString fun_name)
@@ -203,7 +212,7 @@ nestedScopeFreeVars (NestedScope scope)
 
 instance Monoid Usage where
    mempty = Usage
-               { usage_params = Set.empty
+               { usage_params = [] 
                , usage_assigned = Set.empty
                , usage_nonlocals = Set.empty
                , usage_globals = Set.empty
@@ -330,14 +339,14 @@ instance VarUsage SliceSpan where
 
 instance VarUsage (ParameterSpan) where
    varUsage (Param {..}) = 
-      mempty { usage_params = singleVarSet param_name } `mappend`
+      mempty { usage_params = [fromIdentString param_name] } `mappend`
       varUsage param_py_annotation `mappend`
       varUsage param_default
    varUsage (VarArgsPos {..}) =
-      mempty { usage_params = singleVarSet param_name } `mappend`
+      mempty { usage_params = [fromIdentString param_name] } `mappend`
       varUsage param_py_annotation
    varUsage (VarArgsKeyword {..}) =
-      mempty { usage_params = singleVarSet param_name } `mappend`
+      mempty { usage_params = [fromIdentString param_name] } `mappend`
       varUsage param_py_annotation
    varUsage _other = mempty 
 

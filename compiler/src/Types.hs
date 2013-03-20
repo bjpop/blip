@@ -11,10 +11,10 @@
 --
 -----------------------------------------------------------------------------
 module Types 
-   (Identifier, CompileConfig (..), NameID, NameCache
+   (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
-   , DefinitionScope (..), NestedScope (..)) where
+   , DefinitionScope (..), NestedScope (..), VarInfo (..)) where
 
 import Data.Set (Set (..))
 import Blip.Bytecode (Bytecode (..))
@@ -23,11 +23,20 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+-- information about how a variable is bound plus its offset into
+-- the appropriate structure
+data VarInfo
+   = LocalVar VarIndex 
+   | CellVar VarIndex 
+   | FreeVar VarIndex 
+   | GlobalVar VarIndex
+
 type VarSet = Set Identifier
 
 data DefinitionScope
    = DefinitionScope
-     { definitionScope_locals :: !VarSet
+     { definitionScope_params :: ![Identifier]
+     , definitionScope_locals :: !VarSet
      , definitionScope_freeVars :: !VarSet
      , definitionScope_cellVars :: !VarSet
      }
@@ -59,9 +68,6 @@ data CompileConfig =
    }
    deriving (Eq, Show)
 
-type NameID = Word16
-type NameCache = Map.Map Identifier NameID
-
 type ConstantID = Word16
 type ConstantCache = Map.Map PyObject ConstantID 
 
@@ -70,10 +76,12 @@ data CompileState = CompileState
    , state_blockState :: BlockState
    , state_filename :: FilePath
    , state_globals :: VarSet
-   -- , state_nestedScopeStack :: [(DefinitionScope, NestedScope)]
    }
 
 type LabelMap = Map.Map Word16 Word16
+
+type VarIndex = Word16
+type IndexedVarSet = Map.Map Identifier VarIndex
 
 data BlockState = BlockState 
    { state_label :: !Word16
@@ -83,14 +91,15 @@ data BlockState = BlockState
    , state_constantCache :: ConstantCache
    , state_nextConstantID :: !ConstantID
    , state_names :: [Identifier]
-   , state_nameCache :: NameCache
-   , state_nextNameID :: !NameID
+   , state_nameCache :: IndexedVarSet
+   , state_nextNameID :: !VarIndex
    , state_objectName :: String
    , state_instruction_index :: !Word16
    , state_labelMap :: LabelMap
    , state_nestedScope :: NestedScope
-   , state_locals :: VarSet
-   , state_freeVars :: VarSet
-   , state_cellVars :: VarSet
+   , state_locals :: IndexedVarSet
+   , state_freeVars :: IndexedVarSet
+   , state_cellVars :: IndexedVarSet
+   , state_argcount :: !Word32
    }
    deriving (Show)
