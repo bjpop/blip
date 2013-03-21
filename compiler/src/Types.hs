@@ -14,7 +14,8 @@ module Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
-   , DefinitionScope (..), NestedScope (..), VarInfo (..)) where
+   , DefinitionScope (..), NestedScope (..), VarInfo (..)
+   , ScopeIdentifier (..)) where
 
 import Data.Set (Set (..))
 import Blip.Bytecode (Bytecode (..))
@@ -22,6 +23,7 @@ import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Language.Python.Common.SrcLocation (SrcSpan)
 
 -- information about how a variable is bound plus its offset into
 -- the appropriate structure
@@ -42,8 +44,13 @@ data DefinitionScope
      }
      deriving Show
 
+data ScopeIdentifier
+   = LambdaIdentifier SrcSpan
+   | FunOrClassIdentifier Identifier
+   deriving (Eq, Ord, Show)
+
 newtype NestedScope
-   = NestedScope (Map.Map Identifier (DefinitionScope, NestedScope))
+   = NestedScope (Map.Map ScopeIdentifier (DefinitionScope, NestedScope))
    deriving Show
 
 data Dumpable = DumpScope {- | something else -}

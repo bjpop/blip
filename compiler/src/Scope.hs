@@ -70,7 +70,9 @@
 
 module Scope (topScope, renderScope) where
 
-import Types (Identifier, VarSet, DefinitionScope (..), NestedScope (..))
+import Types
+   ( Identifier, VarSet, DefinitionScope (..)
+   , NestedScope (..), ScopeIdentifier (..))
 import Data.Set as Set
    ( Set, empty, singleton, fromList, union, unions, difference
    , intersection, toList, size )
@@ -97,14 +99,19 @@ type CellVars = VarSet
 type FreeVars = VarSet
 type EnclosingVars = VarSet
 
+instance Pretty ScopeIdentifier where
+   -- XXX fixme printing of lambda location
+   pretty (LambdaIdentifier srcloc) = text "lambda"
+   pretty (FunOrClassIdentifier identifier) = text identifier
+
 instance Pretty NestedScope where
    pretty (NestedScope scope) =
       vcat $ map prettyLocalScope identsScopes
       where
       identsScopes = Map.toList scope
-      prettyLocalScope :: (Identifier, (DefinitionScope, NestedScope)) -> Doc
+      prettyLocalScope :: (ScopeIdentifier, (DefinitionScope, NestedScope)) -> Doc
       prettyLocalScope (identifier, (defScope, nestedScope)) =
-         text identifier <+> text "->" $$ 
+         pretty identifier <+> text "->" $$ 
          nest 5 (pretty defScope $$ pretty nestedScope)
 
 instance Pretty DefinitionScope where
@@ -196,7 +203,7 @@ nestedScope (NestedScope scope) (DefStmt (Fun {..})) = do
           , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = cellVars }
-       newScope = Map.insert (fromIdentString fun_name)
+       newScope = Map.insert (FunOrClassIdentifier $ fromIdentString fun_name)
                              (thisDefinitionScope, thisNestedScope)
                              scope
    return $ NestedScope newScope

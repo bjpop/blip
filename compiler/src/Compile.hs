@@ -30,9 +30,10 @@ import State
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
-   (Identifier, CompileConfig (..)
+   ( Identifier, CompileConfig (..)
    , ConstantID, CompileState (..), BlockState (..)
-   , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..) )
+   , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
+   , ScopeIdentifier (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -119,16 +120,21 @@ instance Compilable ModuleSpan where
       setObjectName "<module>"
       compile $ Body stmts
 
-nestedBlock :: Identifier -> Compile a -> Compile a
-nestedBlock objectName comp = do
+scopeIdentToObjectName :: ScopeIdentifier -> String
+scopeIdentToObjectName (FunOrClassIdentifier ident) = ident
+-- XXX check if this is a suitable name
+scopeIdentToObjectName (LambdaIdentifier _srcSpan) = "<lambda>"
+
+nestedBlock :: ScopeIdentifier -> Compile a -> Compile a
+nestedBlock scopeIdent comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
-   (definitionScope, nestedScope) <- lookupNestedScope objectName
+   (definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
    setBlockState $ initBlockState definitionScope nestedScope
    -- set the new object name
-   setObjectName objectName
+   setObjectName $ scopeIdentToObjectName scopeIdent 
    -- run the nested computation
    result <- comp
    -- restore the original block state
@@ -186,7 +192,7 @@ instance Compilable StatementSpan where
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
       varInfo <- lookupVar funName
-      funBodyObj <- nestedBlock funName $ do
+      funBodyObj <- nestedBlock (FunOrClassIdentifier funName) $ do
          compileFunDocString fun_body
          compile $ Body fun_body
       compileConstantEmit funBodyObj

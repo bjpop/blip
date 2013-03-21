@@ -30,7 +30,7 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..) )
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -139,13 +139,13 @@ getGlobals = gets state_globals
 getNestedScope :: Compile NestedScope
 getNestedScope = getBlockState state_nestedScope
 
-lookupNestedScope :: Identifier -> Compile (DefinitionScope, NestedScope)
+lookupNestedScope :: ScopeIdentifier -> Compile (DefinitionScope, NestedScope)
 lookupNestedScope name = do
    NestedScope nestedScope <- getNestedScope
    case Map.lookup name nestedScope of
       Just scope -> return scope
       -- this case should never happen
-      Nothing -> error $ "no scope found for: " ++ name
+      Nothing -> error $ "no scope found for: " ++ show name
    
 getFileName :: Compile FilePath
 getFileName = gets state_filename
