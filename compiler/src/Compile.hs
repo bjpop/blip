@@ -25,7 +25,8 @@ import State
    , compileConstant, getFileName, newLabel, labelNextInstruction
    , getObjectName, setObjectName, getLastInstruction, getGlobals
    , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
-   , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar )
+   , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar
+   , lookupGlobalVar )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -193,6 +194,27 @@ instance Compilable StatementSpan where
       emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
                                   -- appears to be related to keyword args, and defaults
       emitWriteVar varInfo
+   -- XXX assertions appear to be turned off if the code is compiled
+   -- for optimisation
+   -- If the assertion expression is a tuple of non-zero length, then
+   -- it is always True: CPython warns about this
+   compile (Assert {..}) = do
+      case assert_exprs of
+         test_expr:restAssertExprs -> do
+            compile test_expr
+            end <- newLabel
+            emitCodeArg POP_JUMP_IF_TRUE end
+            GlobalVar assertionErrorVar <- lookupGlobalVar "AssertionError"
+            emitCodeArg LOAD_GLOBAL assertionErrorVar
+            case restAssertExprs of
+               assertMsgExpr:_ -> do
+                  compile assertMsgExpr
+                  emitCodeArg CALL_FUNCTION 1
+               _other -> return ()
+            emitCodeArg RAISE_VARARGS 1
+            labelNextInstruction end
+         _other -> error "assert with no test"
+              
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
