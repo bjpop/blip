@@ -116,7 +116,6 @@ instance Pretty NestedScope where
 
 instance Pretty DefinitionScope where
    pretty (DefinitionScope {..}) =
-      -- text "params:" <+> hsep (map text definitionScope_params) $$
       prettyVarList "params:" definitionScope_params $$
       prettyVarSet "locals:" definitionScope_locals $$
       prettyVarSet "freevars:" definitionScope_freeVars $$
@@ -170,11 +169,19 @@ topScope (Module suite) =
              emptyVarSet emptyVarSet
 
 nestedScope :: NestedScope -> Definition -> ScopeM NestedScope
-nestedScope (NestedScope scope) (DefStmt (Fun {..})) = do
-   let (Usage {..}) = varUsage fun_args `mappend`
-                      varUsage fun_body `mappend`
-                      varUsage fun_result_annotation
-       locals = (usage_assigned `Set.difference` 
+nestedScope nestedScope (DefStmt (Fun {..})) = do
+   let usage = varUsage fun_args `mappend`
+               varUsage fun_body `mappend`
+               varUsage fun_result_annotation
+   functionNestedScope nestedScope usage
+      (FunOrClassIdentifier $ fromIdentString fun_name)
+nestedScope nestedScope (DefLambda (Lambda {..})) = do
+   let usage = varUsage lambda_args `mappend` varUsage lambda_body
+   functionNestedScope nestedScope usage $ LambdaIdentifier expr_annot
+
+functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> ScopeM NestedScope
+functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
+   let locals = (usage_assigned `Set.difference` 
                  usage_globals `Set.difference`
                  usage_nonlocals) `Set.union` (Set.fromList usage_params)
    thisNestedScope <- local (Set.union locals) $
@@ -203,9 +210,9 @@ nestedScope (NestedScope scope) (DefStmt (Fun {..})) = do
           , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = cellVars }
-       newScope = Map.insert (FunOrClassIdentifier $ fromIdentString fun_name)
-                             (thisDefinitionScope, thisNestedScope)
-                             scope
+       newScope = Map.insert scopeIdentifier 
+                     (thisDefinitionScope, thisNestedScope)
+                     scope
    return $ NestedScope newScope
 
 -- Get all the free variables from all the identifiers at the top level

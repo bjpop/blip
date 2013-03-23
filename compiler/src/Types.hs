@@ -45,6 +45,9 @@ data DefinitionScope
      deriving Show
 
 data ScopeIdentifier
+   -- XXX perhaps we can use the start row,col of the lambda
+   -- rather than the whole src span?
+   -- Also, have to guard against empty src spans.
    = LambdaIdentifier SrcSpan
    | FunOrClassIdentifier Identifier
    deriving (Eq, Ord, Show)

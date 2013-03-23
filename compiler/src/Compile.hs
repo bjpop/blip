@@ -159,10 +159,9 @@ instance Compilable Body where
 
 instance Compilable StatementSpan where
    type CompileResult StatementSpan = ()
-   compile (Assign [Var ident _] e _) = do
-      compile e
-      varInfo <- lookupVar $ ident_string ident
-      emitWriteVar varInfo
+   compile (Assign {..}) = do
+      compile assign_expr
+      compileAssignments assign_to
    compile (Return { return_expr = Nothing }) = returnNone
    compile (Return { return_expr = Just expr }) =  
       compile expr >> emitCodeNoArg RETURN_VALUE
@@ -225,6 +224,35 @@ instance Compilable StatementSpan where
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
 
+-- compile multiple possible assignments:
+-- x = y = z = rhs
+compileAssignments :: [ExprSpan] -> Compile ()
+compileAssignments [] = return ()
+compileAssignments [e] = compileAssignTo e
+compileAssignments (e1:e2:rest) = do
+   emitCodeNoArg DUP_TOP
+   compileAssignTo e1
+   compileAssignments (e2:rest)
+
+-- the lhs of an assignment statement
+-- we can assume that the parser has only accepted the appropriate
+-- subset of expression types
+compileAssignTo :: ExprSpan -> Compile ()
+compileAssignTo (Var {..}) = do
+   varInfo <- lookupVar $ ident_string var_ident 
+   emitWriteVar varInfo
+compileAssignTo (Subscript {..}) = do
+   compile subscriptee
+   compile subscript_expr
+   emitCodeNoArg STORE_SUBSCR
+-- XXX this can be optimised in places where the rhs is a
+-- manifest list or tuple, avoiding the building list/tuple
+-- only to deconstruct again
+compileAssignTo (AST.Tuple {..}) = do
+   emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length tuple_exprs
+   mapM_ compileAssignTo tuple_exprs
+compileAssignTo other = error $ "compileAssignTo unsupported: " ++ show other
+
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
 -- by the interpreter for the docstring. If their is no docstring
@@ -271,7 +299,6 @@ instance Compilable ExprSpan where
    compile (Var { var_ident = ident }) = do
       varInfo <- lookupVar $ ident_string ident
       emitReadVar varInfo
-      -- emitCodeArg LOAD_NAME nameID
    compile expr@(AST.Strings {}) =
       compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.Int {}) =
@@ -330,6 +357,19 @@ instance Compilable ExprSpan where
            compile left_op_arg
            compile right_op_arg
            compileOp operator 
+   compile (Lambda {..}) = do
+      funBodyObj <- nestedBlock (LambdaIdentifier expr_annot) $ do
+         -- make the first constant None, to indicate no doc string
+         -- for the lambda
+         compileConstant Blip.None
+         compile lambda_body
+         emitCodeNoArg RETURN_VALUE
+         assemble
+         makeObject
+      compileConstantEmit funBodyObj
+      compileConstantEmit $ Unicode "<lambda>"
+      emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
+                                  -- appears to be related to keyword args, and defaults
    compile other = error $ "unsupported expr: " ++ show other
 
 instance Compilable ArgumentSpan where
