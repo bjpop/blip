@@ -171,8 +171,9 @@ instance Compilable StatementSpan where
          compile stmt_expr >> emitCodeNoArg POP_TOP
    compile (Conditional {..}) = do
       restLabel <- newLabel
-      mapM_ (compileGuard restLabel) cond_guards 
-      compile cond_else
+      -- mapM_ (compileGuard restLabel) cond_guards 
+      -- compile cond_else
+      compileConditional restLabel cond_guards cond_else
       labelNextInstruction restLabel
    compile (While {..}) = do
       startLoop <- newLabel
@@ -265,6 +266,11 @@ compileFunDocString (firstStmt:_stmts)
              return ()
    | otherwise = compileConstant Blip.None >> return ()
 
+
+compileConditional :: Word16 -> (ExprSpan, Suite) -> Suite -> Compile ()
+compileConditional restLabel cond_guards cond_else
+compileConditional = undefined
+{-
 compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
 compileGuard restLabel (expr, stmt) = do
    compile expr
@@ -273,6 +279,7 @@ compileGuard restLabel (expr, stmt) = do
    compile stmt
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
+-}
 
 constantToPyObject :: ExprSpan -> PyObject
 constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value
