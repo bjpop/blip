@@ -10,6 +10,6 @@ all configure clean install:
 	$(MAKE) $@ --directory=compiler
 	$(MAKE) $@ --directory=readpyc
 
-#.PHONY : test
-#test:
-#	shelltest --color --execdir --with='blip' test/regression -- -j1
+.PHONY : test
+test:
+	shelltest --color --execdir test/regression -- -j1

@@ -446,6 +446,9 @@ instance Compilable ExprSpan where
            compile left_op_arg
            compile right_op_arg
            compileOp operator 
+   compile (UnaryOp {..}) = do
+      compile op_arg
+      compileUnaryOp operator
    compile (Lambda {..}) = do
       funBodyObj <- nestedBlock (LambdaIdentifier expr_annot) $ do
          -- make the first constant None, to indicate no doc string
@@ -538,6 +541,15 @@ compileOp operator =
       Divide {} -> BINARY_TRUE_DIVIDE
       FloorDivide {} -> BINARY_FLOOR_DIVIDE
       Modulo {} -> BINARY_MODULO
+      other -> error $ "compileOp: unexpected operator: " ++ show operator
+
+compileUnaryOp :: OpSpan -> Compile ()
+compileUnaryOp operator =
+   emitCodeNoArg $ case operator of
+      Minus {} -> UNARY_NEGATIVE
+      Plus {} -> UNARY_POSITIVE
+      Not {} -> UNARY_NOT
+      Invert {} -> UNARY_INVERT
 
 {-
 from object.h
