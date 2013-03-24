@@ -41,7 +41,7 @@ import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
    ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
-   , OpSpan, Op (..))
+   , OpSpan, Op (..), SuiteSpan)
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -148,12 +148,10 @@ instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
       compile stmts
-      -- if the last instruction is not a return, then return None
-      maybeLastInstruction <- getLastInstruction
-      case maybeLastInstruction of
-         Nothing -> returnNone
-         Just (Bytecode { opcode = RETURN_VALUE }) -> return ()
-         other -> returnNone
+      -- XXX we could avoid this 'return None' if all branches in the code
+      -- ended with a return statement. Can fix this in an optimisation step
+      -- with control flow analysis.
+      returnNone
       assemble
       makeObject
 
@@ -171,9 +169,8 @@ instance Compilable StatementSpan where
          compile stmt_expr >> emitCodeNoArg POP_TOP
    compile (Conditional {..}) = do
       restLabel <- newLabel
-      -- mapM_ (compileGuard restLabel) cond_guards 
-      -- compile cond_else
-      compileConditional restLabel cond_guards cond_else
+      mapM_ (compileGuard restLabel) cond_guards 
+      compile cond_else
       labelNextInstruction restLabel
    compile (While {..}) = do
       startLoop <- newLabel
@@ -266,20 +263,49 @@ compileFunDocString (firstStmt:_stmts)
              return ()
    | otherwise = compileConstant Blip.None >> return ()
 
-
-compileConditional :: Word16 -> (ExprSpan, Suite) -> Suite -> Compile ()
-compileConditional restLabel cond_guards cond_else
-compileConditional = undefined
 {-
-compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
-compileGuard restLabel (expr, stmt) = do
+compileConditional :: Word16 -> [(ExprSpan, [StatementSpan])] -> [StatementSpan] -> Compile ()
+-- final guard with no else clause
+compileConditional restLabel [(expr, body)] [] = do
+   compile expr
+   emitCodeArg POP_JUMP_IF_FALSE restLabel
+   compile body
+   return ()
+-- final guard with an non-empty else clause
+compileConditional restLabel [(expr, body)] elseClause@(_:_) = do
    compile expr
    falseLabel <- newLabel
    emitCodeArg POP_JUMP_IF_FALSE falseLabel
-   compile stmt
+   compile body
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
+   compile elseClause
+   -- XXX this looks bogus, we might need to allow instructions
+   -- to be multiply labelled.
+   -- this next instruction is just to make sure the else part
+   -- has some code in it, so it gets a label
+   -- emitCodeArg JUMP_FORWARD restLabel
+   labelNextInstruction restLabel
+   return ()
+-- non-final guard
+compileConditional restLabel ((expr, body):guards) elseClause = do
+   compile expr
+   falseLabel <- newLabel
+   emitCodeArg POP_JUMP_IF_FALSE restLabel
+   compile body
+   emitCodeArg JUMP_FORWARD restLabel
+   labelNextInstruction falseLabel 
+   compileConditional restLabel guards elseClause
 -}
+
+compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
+compileGuard restLabel (expr, stmts) = do
+   compile expr
+   falseLabel <- newLabel
+   emitCodeArg POP_JUMP_IF_FALSE falseLabel
+   compile stmts
+   emitCodeArg JUMP_FORWARD restLabel
+   labelNextInstruction falseLabel 
 
 constantToPyObject :: ExprSpan -> PyObject
 constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value

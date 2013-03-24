@@ -57,7 +57,7 @@ initBlockState :: DefinitionScope -> NestedScope -> BlockState
 initBlockState (DefinitionScope {..}) nestedScope = BlockState
    { state_label = 0
    , state_instructions = []
-   , state_labelNextInstruction = Nothing
+   , state_labelNextInstruction = [] 
    , state_constants = [] 
    , state_constantCache = Map.empty
    , state_nextConstantID = 0
@@ -176,13 +176,11 @@ newLabel = do
    modifyBlockState $ \s -> s { state_label = newLabel }
    return currentLabel
 
+-- prefix this new label onto the existing ones
 labelNextInstruction :: Word16 -> Compile ()
-labelNextInstruction label = do
-   currentLabelNext <- getBlockState state_labelNextInstruction
-   -- an instruction should be labelled at most once.
-   case currentLabelNext of
-      Just _label -> error "Attempt to label an instruction twice"
-      Nothing -> modifyBlockState $ \ s -> s { state_labelNextInstruction = Just label }
+labelNextInstruction newLabel = do
+   currentLabels <- getBlockState state_labelNextInstruction
+   modifyBlockState $ \ s -> s { state_labelNextInstruction = newLabel : currentLabels }
 
 emitReadVar :: VarInfo -> Compile ()
 emitReadVar (LocalVar index) = emitCodeArg LOAD_FAST index
@@ -205,10 +203,17 @@ emitCodeNoArg opCode = emitCode $ Bytecode opCode Nothing
 emitCode :: Bytecode -> Compile ()
 emitCode instruction = do
    -- Attach a label to the instruction if necesary.
-   maybeLabel <- getBlockState state_labelNextInstruction
+   labels <- getBlockState state_labelNextInstruction
+   -- Ensure current labels are used only once.
+   modifyBlockState $ \s -> s { state_labelNextInstruction = [] }
    instructionIndex <- incInstructionIndex instruction
-   annotatedInstruction <-
-      case maybeLabel of
+   forM_ labels $ \label -> updateLabelMap label instructionIndex
+   let annotatedInstruction =
+          AnnotatedCode { annotatedCode_bytecode = instruction
+                        , annotatedCode_labels = labels
+                        , annotatedCode_index = instructionIndex } 
+{-
+      case labels of
          Nothing ->
             return $ UnLabelled { annotatedCode_bytecode = instruction, 
                                   annotatedCode_index = instructionIndex }
@@ -219,6 +224,7 @@ emitCode instruction = do
             return $ Labelled { annotatedCode_bytecode = instruction 
                               , annotatedCode_label = label
                               , annotatedCode_index = instructionIndex }
+-}
    oldInstructions <- getBlockState state_instructions
    modifyBlockState $
       \s -> s { state_instructions = annotatedInstruction : oldInstructions }

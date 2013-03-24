@@ -60,13 +60,15 @@ data Dumpable = DumpScope {- | something else -}
    deriving (Eq, Ord, Show)
 
 data AnnotatedCode
-   = Labelled 
+   = AnnotatedCode 
      { annotatedCode_bytecode :: Bytecode
-     , annotatedCode_label :: !Word16
+     , annotatedCode_labels :: ![Word16]   -- instruction can be labelled zero or more times
      , annotatedCode_index :: !Word16 } 
+{-
    | UnLabelled 
      { annotatedCode_bytecode :: Bytecode
      , annotatedCode_index :: !Word16 }
+-}
    deriving Show
 
 type Identifier = String -- a variable name
@@ -88,6 +90,9 @@ data CompileState = CompileState
    , state_globals :: VarSet
    }
 
+-- Map from Label to Instruction offset.
+-- The same instruction can be labelled multiple times,
+-- but each label is attached to exactly one instruction.
 type LabelMap = Map.Map Word16 Word16
 
 type VarIndex = Word16
@@ -96,7 +101,7 @@ type IndexedVarSet = Map.Map Identifier VarIndex
 data BlockState = BlockState 
    { state_label :: !Word16
    , state_instructions :: [AnnotatedCode]
-   , state_labelNextInstruction :: !(Maybe Word16) -- maybe label the next emitted instruction
+   , state_labelNextInstruction :: [Word16] -- zero or more labels for the next instruction
    , state_constants :: [PyObject] 
    , state_constantCache :: ConstantCache
    , state_nextConstantID :: !ConstantID
