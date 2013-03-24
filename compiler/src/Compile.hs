@@ -305,6 +305,10 @@ compileAssignTo (Subscript {..}) = do
 compileAssignTo (AST.Tuple {..}) = do
    emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length tuple_exprs
    mapM_ compileAssignTo tuple_exprs
+compileAssignTo (AST.List {..}) = do
+   emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length list_exprs
+   mapM_ compileAssignTo list_exprs
+compileAssignTo (AST.Paren {..}) = compileAssignTo paren_expr
 compileAssignTo other = error $ "compileAssignTo unsupported: " ++ show other
 
 -- Check for a docstring in the first statement of a function body.
@@ -442,6 +446,7 @@ instance Compilable ExprSpan where
    compile exp@(BinaryOp {..})
       | isBoolean operator = compileBoolean exp
       | isComparison operator = compileComparison exp
+      | isDot operator = compileDot exp 
       | otherwise = do 
            compile left_op_arg
            compile right_op_arg
@@ -501,10 +506,14 @@ instance Compilable ArgumentSpan where
    compile (ArgExpr {..}) = compile arg_expr
    compile other = error $ "unsupported argument: " ++ show other
 
+isDot :: OpSpan -> Bool
+isDot (Dot {}) = True
+isDot _other = False
+
 isBoolean :: OpSpan -> Bool
 isBoolean (And {}) = True
 isBoolean (Or {}) = True
-isBoolean other = False
+isBoolean _other = False
 
 isComparison :: OpSpan -> Bool
 isComparison (LessThan {}) = True
@@ -514,6 +523,16 @@ isComparison (GreaterThanEquals {}) = True
 isComparison (LessThanEquals {}) = True
 isComparison (NotEquals  {}) = True
 isComparison other = False
+
+compileDot :: ExprSpan -> Compile ()
+compileDot (BinaryOp {..}) = do
+   compile left_op_arg
+   case right_op_arg of
+      Var {..} -> do
+         -- the right argument should be treated like a global variable
+         GlobalVar varInfo <- lookupGlobalVar $ ident_string var_ident
+         emitCodeArg LOAD_ATTR varInfo 
+      other -> error $ "right argument of dot operator not a variable"
 
 compileBoolean :: ExprSpan -> Compile ()
 compileBoolean (BinaryOp {..}) = do

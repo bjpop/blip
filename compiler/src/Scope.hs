@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards, PatternGuards  #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -82,7 +82,7 @@ import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
    , Argument (..), ArgumentSpan, RaiseExpr (..), RaiseExprSpan
    , Slice (..), SliceSpan, ModuleSpan, Module (..), ParameterSpan
-   , Parameter (..) )
+   , Parameter (..), Op (..) )
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
 import Control.Monad.RWS.Strict (RWS (..), local, modify, ask, runRWS)
@@ -320,8 +320,11 @@ instance VarUsage ExprSpan where
       varUsage ce_true_branch `mappend`
       varUsage ce_condition `mappend`
       varUsage ce_false_branch
-   varUsage (BinaryOp {..}) =
-      varUsage left_op_arg `mappend` varUsage right_op_arg
+   -- if it is a dot operator then the right argument must be a global name
+   -- but it is not defined in this module so we can ignore it
+   varUsage (BinaryOp {..})
+      | Dot {} <- operator = varUsage left_op_arg 
+      | otherwise = varUsage left_op_arg `mappend` varUsage right_op_arg
    varUsage (UnaryOp {..}) = varUsage op_arg
    varUsage expr@(Lambda {..}) = mempty { usage_definitions = [DefLambda expr] }
    varUsage (Tuple {..}) = varUsage tuple_exprs
