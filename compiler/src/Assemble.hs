@@ -48,6 +48,7 @@ applyLabelMap labelMap code =
             JUMP_ABSOLUTE -> absoluteTarget bytecode jumpTarget 
             JUMP_IF_FALSE_OR_POP -> absoluteTarget bytecode jumpTarget
             JUMP_IF_TRUE_OR_POP -> absoluteTarget bytecode jumpTarget 
+            FOR_ITER -> relativeTarget bytecode index jumpTarget
             other -> bytecode
       bytecode = annotatedCode_bytecode annotatedCode
       index = annotatedCode_index annotatedCode

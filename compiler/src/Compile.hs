@@ -186,6 +186,25 @@ instance Compilable StatementSpan where
       emitCodeNoArg POP_BLOCK
       compile while_else
       labelNextInstruction endLoop
+   compile (For {..}) = do
+      startLoop <- newLabel
+      endLoop <- newLabel
+      anchor <- newLabel
+      emitCodeArg SETUP_LOOP endLoop
+      compile for_generator
+      emitCodeNoArg GET_ITER
+      labelNextInstruction startLoop
+      emitCodeArg FOR_ITER anchor
+      let num_targets = length for_targets
+      when (num_targets > 1) $ do
+         emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
+      mapM_ compileAssignTo for_targets 
+      compile for_body 
+      emitCodeArg JUMP_ABSOLUTE startLoop
+      labelNextInstruction anchor 
+      emitCodeNoArg POP_BLOCK
+      compile for_else
+      labelNextInstruction endLoop
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
       varInfo <- lookupVar funName
