@@ -1,0 +1,10 @@
+blip unary_minus.py; python3.3 unary_minus.pyc
+<<<
+>>>
+-1
+0
+-6
+-24
+10
+>>>2
+>>>=0

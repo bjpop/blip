@@ -1,0 +1,8 @@
+blip empty_comprehension.py; python3.3 empty_comprehension.pyc
+<<<
+>>>
+[]
+set()
+{}
+>>>2
+>>>=0

@@ -1,0 +1,6 @@
+blip procedure_docstring.py; python3.3 procedure_docstring.pyc
+<<<
+>>>
+Hello World
+>>>2
+>>>=0

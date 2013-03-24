@@ -1,0 +1,9 @@
+berp closure_update_free_var.py
+blip closure_update_free.py; python3.3 closure_update_free.pyc
+<<<
+>>>
+6
+7
+8
+>>>2
+>>>=0

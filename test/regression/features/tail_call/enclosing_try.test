@@ -1,0 +1,8 @@
+blip enclosing_try.py; python3.3 enclosing_try.pyc
+<<<
+>>>
+caught exception
+after handler
+12
+>>>2
+>>>=0

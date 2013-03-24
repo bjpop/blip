@@ -1,0 +1,7 @@
+blip input_no_args.py; python3.3 input_no_args.pyc
+<<<
+hello
+>>>
+hello
+>>>2
+>>>=0

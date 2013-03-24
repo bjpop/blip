@@ -1,0 +1,10 @@
+blip list_setitem.py; python3.3 list_setitem.pyc
+<<<
+>>>
+[0]
+[1]
+[2]
+[4, 7, 6]
+[4, 7, 8]
+>>>2
+>>>=0

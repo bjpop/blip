@@ -1,0 +1,7 @@
+blip set_literal.py; python3.3 set_literal.pyc
+<<<
+>>>
+{1}
+{1, 2}
+>>>2
+>>>=0

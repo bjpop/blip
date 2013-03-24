@@ -1,0 +1,6 @@
+print(18 * 1234)
+print(18 * 1234 * 2)
+print(0 * 1)
+print(1 * 0)
+print(0.0 * 1.0)
+print(1.0 * 0.0)

@@ -1,0 +1,6 @@
+blip list_of_list.py; python3.3 list_of_list.pyc
+<<<
+>>>
+[[1, 2, 3], [], [4]]
+>>>2
+>>>=0

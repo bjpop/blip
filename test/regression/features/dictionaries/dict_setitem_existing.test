@@ -1,0 +1,6 @@
+blip dict_setitem_existing.py; python3.3 dict_setitem_existing.pyc
+<<<
+>>>
+{'itchy': 'elbow'}
+>>>2
+>>>=0
