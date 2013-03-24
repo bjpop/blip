@@ -192,10 +192,7 @@ instance Compilable StatementSpan where
       funBodyObj <- nestedBlock (FunOrClassIdentifier funName) $ do
          compileFunDocString fun_body
          compile $ Body fun_body
-      compileConstantEmit funBodyObj
-      compileConstantEmit $ Unicode funName
-      emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
-                                  -- appears to be related to keyword args, and defaults
+      compileClosure funName funBodyObj
       emitWriteVar varInfo
    -- XXX assertions appear to be turned off if the code is compiled
    -- for optimisation
@@ -400,10 +397,42 @@ instance Compilable ExprSpan where
          assemble
          makeObject
       compileConstantEmit funBodyObj
-      compileConstantEmit $ Unicode "<lambda>"
-      emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
-                                  -- appears to be related to keyword args, and defaults
+      compileClosure "<lambda>" funBodyObj
    compile other = error $ "unsupported expr: " ++ show other
+
+-- XXX CPython uses a "qualified" name for the code object. For instance
+-- nested functions look like "f.<locals>.g", whereas we currently use
+-- just "g".
+
+-- The free variables in a code object will either be cell variables
+-- or free variables in the enclosing object. If there are no free
+-- variables then we can avoid building the closure, and just make the function.
+compileClosure :: String -> PyObject -> Compile ()
+compileClosure name obj = do
+   -- get the list of free variables from the code object
+   let Blip.Tuple freeVarStringObjs = freevars obj
+       freeVarIdentifiers = map unicode freeVarStringObjs
+       numFreeVars = length freeVarIdentifiers
+   if numFreeVars == 0
+      then do
+         compileConstantEmit obj 
+         compileConstantEmit $ Unicode name
+         emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
+                                     -- appears to be related to keyword args, and defaults
+      else do
+         forM_ freeVarIdentifiers $ \var -> do
+            varInfo <- lookupVar var
+            -- we don't use emitReadVar because it would generate
+            -- LOAD_DEREF instructions, but we want LOAD_CLOSURE
+            -- instead.
+            case varInfo of
+               CellVar index -> emitCodeArg LOAD_CLOSURE index
+               FreeVar index -> emitCodeArg LOAD_CLOSURE index
+               other -> error "closure free variable not cell or free var in outer context"
+         emitCodeArg BUILD_TUPLE $ fromIntegral numFreeVars
+         compileConstantEmit obj 
+         compileConstantEmit $ Unicode name
+         emitCodeArg MAKE_CLOSURE 0 -- XXX fix the argument to MAKE_CLOSURE 
 
 instance Compilable ArgumentSpan where
    type CompileResult ArgumentSpan = ()

@@ -212,19 +212,6 @@ emitCode instruction = do
           AnnotatedCode { annotatedCode_bytecode = instruction
                         , annotatedCode_labels = labels
                         , annotatedCode_index = instructionIndex } 
-{-
-      case labels of
-         Nothing ->
-            return $ UnLabelled { annotatedCode_bytecode = instruction, 
-                                  annotatedCode_index = instructionIndex }
-         Just label -> do
-            -- make sure we only use this label once
-            modifyBlockState $ \s -> s { state_labelNextInstruction = Nothing }
-            updateLabelMap label instructionIndex
-            return $ Labelled { annotatedCode_bytecode = instruction 
-                              , annotatedCode_label = label
-                              , annotatedCode_index = instructionIndex }
--}
    oldInstructions <- getBlockState state_instructions
    modifyBlockState $
       \s -> s { state_instructions = annotatedInstruction : oldInstructions }
@@ -268,6 +255,12 @@ compileConstantEmit obj = do
    constantID <- compileConstant obj
    emitCodeArg LOAD_CONST constantID
 
+-- check if var is:
+--    cellvar
+--    freevar
+--    localvar
+--    globalvar
+-- in that order.
 lookupVar :: Identifier -> Compile VarInfo
 lookupVar identifier = do
    cellvars <- getBlockState state_cellVars
