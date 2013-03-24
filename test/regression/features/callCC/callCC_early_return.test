@@ -1,7 +1,0 @@
-blip callCC_early_return.py; python3.3 callCC_early_return.pyc
-<<<
->>>
-False
-True
->>>2
->>>=0
