@@ -41,7 +41,8 @@ import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
    ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
-   , OpSpan, Op (..), SuiteSpan)
+   , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
+   , ExceptClauseSpan )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -201,7 +202,7 @@ instance Compilable StatementSpan where
       mapM_ compileAssignTo for_targets 
       compile for_body 
       emitCodeArg JUMP_ABSOLUTE startLoop
-      labelNextInstruction anchor 
+      labelNextInstruction anchor
       emitCodeNoArg POP_BLOCK
       compile for_else
       labelNextInstruction endLoop
@@ -233,10 +234,49 @@ instance Compilable StatementSpan where
             emitCodeArg RAISE_VARARGS 1
             labelNextInstruction end
          _other -> error "assert with no test"
-              
+   -- XXX not complete
+   compile (Try {..}) = do
+      firstHandler <- newLabel
+      emitCodeArg SETUP_EXCEPT firstHandler
+      compile try_body
+      emitCodeNoArg POP_BLOCK
+      end <- newLabel
+      emitCodeArg JUMP_FORWARD end
+      compileHandlers end firstHandler try_excepts
+      labelNextInstruction end
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
+
+compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
+compileHandlers end handlerLabel [] = do
+   labelNextInstruction handlerLabel
+   emitCodeNoArg END_FINALLY
+compileHandlers end handlerLabel (Handler {..} : rest) = do
+   labelNextInstruction handlerLabel
+   nextLabel <- newLabel 
+   compileHandlerClause nextLabel handler_clause
+   emitCodeNoArg POP_TOP
+   compile handler_suite
+   emitCodeArg JUMP_FORWARD end
+   compileHandlers end nextLabel rest 
+
+exactMatchOp :: Word16
+exactMatchOp = 10
+
+compileHandlerClause :: Word16 -> ExceptClauseSpan -> Compile ()
+compileHandlerClause nextHandler (ExceptClause {..}) = do
+   case except_clause of
+      Nothing -> emitCodeNoArg POP_TOP >> emitCodeNoArg POP_TOP
+      Just (target, asExpr) -> do
+         emitCodeNoArg DUP_TOP
+         compile target
+         emitCodeArg COMPARE_OP exactMatchOp
+         emitCodeArg POP_JUMP_IF_FALSE nextHandler
+         emitCodeNoArg POP_TOP
+         case asExpr of
+            Nothing -> emitCodeNoArg POP_TOP
+            Just expr -> compileAssignTo expr
 
 -- compile multiple possible assignments:
 -- x = y = z = rhs
@@ -508,6 +548,11 @@ from object.h
 #define Py_NE 3
 #define Py_GT 4
 #define Py_GE 5
+
+and from opcode.h 
+
+enum cmp_op {PyCmp_LT=Py_LT, PyCmp_LE=Py_LE, PyCmp_EQ=Py_EQ, PyCmp_NE=Py_NE, PyCmp_GT=Py_GT, PyCmp_GE=Py_GE,
+             PyCmp_IN, PyCmp_NOT_IN, PyCmp_IS, PyCmp_IS_NOT, PyCmp_EXC_MATCH, PyCmp_BAD};
 -}
 
 compileComparison :: ExprSpan -> Compile ()
@@ -523,6 +568,11 @@ compileComparison (BinaryOp {..}) = do
    comparisonOpCode (NotEquals {}) = 3 
    comparisonOpCode (GreaterThan {}) = 4 
    comparisonOpCode (GreaterThanEquals {}) = 5 
+   comparisonOpCode (In {}) = 6
+   comparisonOpCode (NotIn {}) = 7
+   comparisonOpCode (Is {}) = 8
+   comparisonOpCode (IsNot {}) = 9
+   -- XXX we don't appear to have an exact match operator in the AST
    comparisonOpCode other = error $ "Unexpected comparison operator: " ++ show operator
  
 makeObject :: Compile PyObject
