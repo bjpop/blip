@@ -4,4 +4,4 @@ def count(m,n):
    else:
       return count(m+1,n) 
 
-print(count(0,1000000))
+print(count(0,10))

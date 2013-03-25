@@ -4,4 +4,4 @@ def fac(n, acc):
     else:
        return fac(n-1, n*acc)
 
-print(fac(1000, 1))
+print(fac(12, 1))
