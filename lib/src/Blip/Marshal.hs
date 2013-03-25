@@ -76,6 +76,7 @@ data PyObject
    | Unicode { unicode :: String } -- should be decoded into a String
    | TrueObj
    | FalseObj
+   | Complex { real :: Double, imaginary :: Double }
    deriving (Eq, Ord, Show)
 
 instance Pretty PyObject where
@@ -103,6 +104,7 @@ instance Pretty PyObject where
       text "names =" <+> pretty names $$
       prettyConsts consts $$ 
       text "code =" <+> pretty (BytecodeSeq $ decode $ string code)
+   pretty (Complex {..}) = pretty real <+> text "+" <+> pretty imaginary <> text "j"
 
 prettyConsts :: PyObject -> Doc
 prettyConsts obj =
@@ -153,6 +155,7 @@ readObject = do
        FALSE -> return FalseObj
        UNICODE -> readUnicodeObject
        BINARY_FLOAT -> readFloatObject
+       BINARY_COMPLEX -> readComplexObject
        _other -> error ("readObject: unsupported object type" ++ show object_type)
 
 writeObject :: PyObject -> PutData
@@ -167,6 +170,7 @@ writeObject object =
       TrueObj -> putU8 $ encodeObjectType TRUE
       FalseObj -> putU8 $ encodeObjectType FALSE
       Float {..} -> writeFloatObject object
+      Complex {..} -> writeComplexObject object
 
 writeObjectType :: ObjectType -> PutData
 writeObjectType = putU8 . encodeObjectType
@@ -219,10 +223,17 @@ writeIntObject (Int {..}) =
 readFloatObject :: GetData PyObject
 readFloatObject = Float <$> getDouble
 
+readComplexObject :: GetData PyObject
+readComplexObject = Complex <$> getDouble <*> getDouble
+
 writeFloatObject :: PyObject -> PutData
 writeFloatObject (Float {..}) = 
    -- writeObjectType BINARY_FLOAT >> putE float_value
    writeObjectType BINARY_FLOAT >> putDouble float_value
+
+writeComplexObject :: PyObject -> PutData
+writeComplexObject (Complex {..}) =
+   writeObjectType BINARY_COMPLEX >> putDouble real >> putDouble imaginary
 
 readUnicodeObject :: GetData PyObject
 readUnicodeObject = do

@@ -370,6 +370,11 @@ compileGuard restLabel (expr, stmts) = do
 constantToPyObject :: ExprSpan -> PyObject
 constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value
 constantToPyObject (AST.Float {..}) = Blip.Float $ float_value 
+-- XXX we could optimise the case where we have 'float + imaginary j',
+-- to generate a Complex number directly, rather than by doing
+-- the addition operation.
+constantToPyObject (AST.Imaginary {..}) =
+   Blip.Complex { real = 0.0, imaginary = imaginary_value }
 constantToPyObject (AST.Bool { bool_value = True }) = Blip.TrueObj
 constantToPyObject (AST.Bool { bool_value = False }) = Blip.FalseObj
 constantToPyObject (AST.None {}) = Blip.None
@@ -397,6 +402,8 @@ instance Compilable ExprSpan where
    compile expr@(AST.Int {}) =
       compileConstantEmit $ constantToPyObject expr
    compile expr@(AST.Float {}) =
+      compileConstantEmit $ constantToPyObject expr
+   compile expr@(AST.Imaginary {}) =
       compileConstantEmit $ constantToPyObject expr
    compile expr@(AST.Bool {}) =
       compileConstantEmit $ constantToPyObject expr
@@ -539,8 +546,8 @@ compileBoolean (BinaryOp {..}) = do
    endLabel <- newLabel
    compile left_op_arg
    case operator of
-      And {..} -> emitCodeArg POP_JUMP_IF_FALSE endLabel
-      Or {..} ->  emitCodeArg POP_JUMP_IF_TRUE endLabel
+      And {..} -> emitCodeArg JUMP_IF_FALSE_OR_POP endLabel
+      Or {..} ->  emitCodeArg JUMP_IF_TRUE_OR_POP endLabel
       other -> error $ "unexpected boolean operator: " ++ show other
    compile right_op_arg
    labelNextInstruction endLabel

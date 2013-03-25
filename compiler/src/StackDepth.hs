@@ -28,7 +28,7 @@ import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
 
 maxStackDepth :: Compile Word32
-maxStackDepth = return 10
+maxStackDepth = return 100
 
 type BytecodeMap = Map.Map Word16 [Bytecode]
 
