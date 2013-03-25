@@ -244,6 +244,8 @@ instance Compilable StatementSpan where
       emitCodeArg JUMP_FORWARD end
       compileHandlers end firstHandler try_excepts
       labelNextInstruction end
+   -- XXX should check that we are inside a loop
+   compile (Break {}) = emitCodeNoArg BREAK_LOOP
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile other = error ("Unsupported statement " ++ show other) 
