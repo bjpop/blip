@@ -1,6 +1,6 @@
 blip dict_setitem_new.py; python3.3 dict_setitem_new.pyc
 <<<
 >>>
-{'itchy': 'knee', 'scratchy': 'elbow'}
+[('itchy', 'knee'), ('scratchy', 'elbow')]
 >>>2
 >>>=0
