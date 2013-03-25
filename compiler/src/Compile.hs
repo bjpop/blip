@@ -470,7 +470,6 @@ instance Compilable ExprSpan where
          emitCodeNoArg RETURN_VALUE
          assemble
          makeObject
-      compileConstantEmit funBodyObj
       compileClosure "<lambda>" funBodyObj
    compile other = error $ "unsupported expr: " ++ show other
 
