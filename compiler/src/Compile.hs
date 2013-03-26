@@ -486,14 +486,20 @@ instance Compilable ImportItemSpan where
    compile (ImportItem {..}) = do
       compileConstantEmit $ Blip.Int 0 -- this always seems to be zero
       compileConstantEmit Blip.None
+      let dottedNames = map ident_string import_item_name
+      -- assert (length dottedNames > 0)
       let dottedNameStr =
-             concat $ intersperse "." $ map ident_string import_item_name
+             concat $ intersperse "." dottedNames
       GlobalVar index <- lookupGlobalVar dottedNameStr
       emitCodeArg IMPORT_NAME index
-      let storeName =
-             case import_as_name of
-                Nothing -> head import_item_name
-                Just asName -> asName
+      storeName <- 
+         case import_as_name of
+            Nothing -> return $ head import_item_name
+            Just asName -> do
+               forM_ (tail dottedNames) $ \attribute -> do
+                  GlobalVar index <- lookupGlobalVar attribute
+                  emitCodeArg LOAD_ATTR index 
+               return asName
       varInfo <- lookupVar $ ident_string storeName
       emitWriteVar varInfo
 
