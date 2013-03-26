@@ -42,7 +42,7 @@ import Language.Python.Common.AST as AST
    ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
    , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
-   , ExceptClauseSpan )
+   , ExceptClauseSpan, ImportItem (..), ImportItemSpan )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -53,7 +53,7 @@ import Data.Traversable as Traversable (mapM)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
-import Data.List (sort)
+import Data.List (sort, intersperse)
 import Control.Monad (unless, forM_, when)
 import Control.Exception (try)
 import System.IO.Error (IOError, userError, ioError)
@@ -244,11 +244,13 @@ instance Compilable StatementSpan where
       emitCodeArg JUMP_FORWARD end
       compileHandlers end firstHandler try_excepts
       labelNextInstruction end
+   compile (Import {..}) = mapM_ compile import_items
+   -- compile (FromImport {..}) = do
    -- XXX should check that we are inside a loop
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
-   compile other = error ("Unsupported statement " ++ show other) 
+   compile other = error $ "Unsupported statement:\n" ++ prettyText other
 
 compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
 compileHandlers end handlerLabel [] = do
@@ -311,7 +313,7 @@ compileAssignTo (AST.List {..}) = do
    emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length list_exprs
    mapM_ compileAssignTo list_exprs
 compileAssignTo (AST.Paren {..}) = compileAssignTo paren_expr
-compileAssignTo other = error $ "compileAssignTo unsupported: " ++ show other
+compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ prettyText other
 
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
@@ -324,41 +326,6 @@ compileFunDocString (firstStmt:_stmts)
         = do compileConstant $ constantToPyObject stmt_expr
              return ()
    | otherwise = compileConstant Blip.None >> return ()
-
-{-
-compileConditional :: Word16 -> [(ExprSpan, [StatementSpan])] -> [StatementSpan] -> Compile ()
--- final guard with no else clause
-compileConditional restLabel [(expr, body)] [] = do
-   compile expr
-   emitCodeArg POP_JUMP_IF_FALSE restLabel
-   compile body
-   return ()
--- final guard with an non-empty else clause
-compileConditional restLabel [(expr, body)] elseClause@(_:_) = do
-   compile expr
-   falseLabel <- newLabel
-   emitCodeArg POP_JUMP_IF_FALSE falseLabel
-   compile body
-   emitCodeArg JUMP_FORWARD restLabel
-   labelNextInstruction falseLabel 
-   compile elseClause
-   -- XXX this looks bogus, we might need to allow instructions
-   -- to be multiply labelled.
-   -- this next instruction is just to make sure the else part
-   -- has some code in it, so it gets a label
-   -- emitCodeArg JUMP_FORWARD restLabel
-   labelNextInstruction restLabel
-   return ()
--- non-final guard
-compileConditional restLabel ((expr, body):guards) elseClause = do
-   compile expr
-   falseLabel <- newLabel
-   emitCodeArg POP_JUMP_IF_FALSE restLabel
-   compile body
-   emitCodeArg JUMP_FORWARD restLabel
-   labelNextInstruction falseLabel 
-   compileConditional restLabel guards elseClause
--}
 
 compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
 compileGuard restLabel (expr, stmts) = do
@@ -473,7 +440,7 @@ instance Compilable ExprSpan where
          assemble
          makeObject
       compileClosure "<lambda>" funBodyObj
-   compile other = error $ "unsupported expr: " ++ show other
+   compile other = error $ "Unsupported expr:\n" ++ prettyText other
 
 -- XXX CPython uses a "qualified" name for the code object. For instance
 -- nested functions look like "f.<locals>.g", whereas we currently use
@@ -512,7 +479,23 @@ compileClosure name obj = do
 instance Compilable ArgumentSpan where
    type CompileResult ArgumentSpan = ()
    compile (ArgExpr {..}) = compile arg_expr
-   compile other = error $ "unsupported argument: " ++ show other
+   compile other = error $ "Unsupported argument:\n" ++ prettyText other
+
+instance Compilable ImportItemSpan where
+   type CompileResult ImportItemSpan = ()
+   compile (ImportItem {..}) = do
+      compileConstantEmit $ Blip.Int 0 -- this always seems to be zero
+      compileConstantEmit Blip.None
+      let dottedNameStr =
+             concat $ intersperse "." $ map ident_string import_item_name
+      GlobalVar index <- lookupGlobalVar dottedNameStr
+      emitCodeArg IMPORT_NAME index
+      let storeName =
+             case import_as_name of
+                Nothing -> head import_item_name
+                Just asName -> asName
+      varInfo <- lookupVar $ ident_string storeName
+      emitWriteVar varInfo
 
 isDot :: OpSpan -> Bool
 isDot (Dot {}) = True
@@ -540,7 +523,7 @@ compileDot (BinaryOp {..}) = do
          -- the right argument should be treated like a global variable
          GlobalVar varInfo <- lookupGlobalVar $ ident_string var_ident
          emitCodeArg LOAD_ATTR varInfo 
-      other -> error $ "right argument of dot operator not a variable"
+      other -> error $ "right argument of dot operator not a variable:\n" ++ prettyText other
 
 compileBoolean :: ExprSpan -> Compile ()
 compileBoolean (BinaryOp {..}) = do
@@ -549,7 +532,7 @@ compileBoolean (BinaryOp {..}) = do
    case operator of
       And {..} -> emitCodeArg JUMP_IF_FALSE_OR_POP endLabel
       Or {..} ->  emitCodeArg JUMP_IF_TRUE_OR_POP endLabel
-      other -> error $ "unexpected boolean operator: " ++ show other
+      other -> error $ "Unexpected boolean operator:\n" ++ prettyText other
    compile right_op_arg
    labelNextInstruction endLabel
 
@@ -568,7 +551,7 @@ compileOp operator =
       Divide {} -> BINARY_TRUE_DIVIDE
       FloorDivide {} -> BINARY_FLOOR_DIVIDE
       Modulo {} -> BINARY_MODULO
-      other -> error $ "compileOp: unexpected operator: " ++ show operator
+      other -> error $ "Unexpected operator:\n" ++ prettyText operator
 
 compileUnaryOp :: OpSpan -> Compile ()
 compileUnaryOp operator =
@@ -612,7 +595,7 @@ compileComparison (BinaryOp {..}) = do
    comparisonOpCode (Is {}) = 8
    comparisonOpCode (IsNot {}) = 9
    -- XXX we don't appear to have an exact match operator in the AST
-   comparisonOpCode other = error $ "Unexpected comparison operator: " ++ show operator
+   comparisonOpCode other = error $ "Unexpected comparison operator:\n" ++ prettyText operator
  
 makeObject :: Compile PyObject
 makeObject = do
@@ -625,10 +608,12 @@ makeObject = do
    localVars <- getBlockState state_locals
    argcount <- getBlockState state_argcount
    let code = map annotatedCode_bytecode annotatedCode 
-   let localVarNames = map Unicode $ indexedVarSetKeys localVars
-   if stackDepth > maxBound
+       localVarNames = map Unicode $ indexedVarSetKeys localVars
+       maxStackDepth = maxBound 
+   if stackDepth > maxStackDepth
       -- XXX make a better error message
-      then error "Maximum stack depth exceeded"
+      then error $ "Maximum stack depth " ++ show maxStackDepth ++
+                   " exceeded: " ++ show stackDepth
       else do
          pyFileName <- getFileName
          objectName <- getObjectName
