@@ -1,4 +1,4 @@
-blip class_with_str.py; python3.3 class_with_str.pyc
+blip class_with_str.py && python3.3 class_with_str.pyc
 <<<
 >>>
 A C object

@@ -1,4 +1,4 @@
-blip count_rec.py; python3.3 count_rec.pyc
+blip count_rec.py && python3.3 count_rec.pyc
 <<<
 >>>
 10

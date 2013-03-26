@@ -1,4 +1,4 @@
-blip mult.py; python3.3 mult.pyc
+blip mult.py && python3.3 mult.pyc
 <<<
 >>>
 22212

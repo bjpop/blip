@@ -1,4 +1,4 @@
-blip empty_comprehension.py; python3.3 empty_comprehension.pyc
+blip empty_comprehension.py && python3.3 empty_comprehension.pyc
 <<<
 >>>
 []

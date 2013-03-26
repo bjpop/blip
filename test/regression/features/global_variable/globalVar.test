@@ -1,4 +1,4 @@
-blip globalVar.py; python3.3 globalVar.pyc
+blip globalVar.py && python3.3 globalVar.pyc
 <<<
 >>>
 5

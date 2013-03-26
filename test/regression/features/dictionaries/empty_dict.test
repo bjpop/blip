@@ -1,4 +1,4 @@
-blip empty_dict.py; python3.3 empty_dict.pyc
+blip empty_dict.py && python3.3 empty_dict.pyc
 <<<
 >>>
 {}

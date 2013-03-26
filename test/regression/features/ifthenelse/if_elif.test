@@ -1,4 +1,4 @@
-blip if_elif.py; python3.3 if_elif.pyc
+blip if_elif.py && python3.3 if_elif.pyc
 <<<
 >>>
 1

@@ -1,4 +1,4 @@
-blip inherit_attribute.py; python3.3 inherit_attribute.pyc
+blip inherit_attribute.py && python3.3 inherit_attribute.pyc
 <<<
 >>>
 12

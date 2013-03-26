@@ -1,4 +1,4 @@
-blip lambda_printed.py; python3.3 lambda_printed.pyc
+blip lambda_printed.py && python3.3 lambda_printed.pyc
 <<<
 >>> /<function/
 >>>2

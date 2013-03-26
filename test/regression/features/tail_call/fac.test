@@ -1,4 +1,4 @@
-blip fac.py; python3.3 fac.pyc
+blip fac.py && python3.3 fac.pyc
 <<<
 >>>
 479001600

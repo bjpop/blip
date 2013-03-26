@@ -1,4 +1,4 @@
-blip list_append.py; python3.3 list_append.pyc
+blip list_append.py && python3.3 list_append.pyc
 <<<
 >>>
 [1, 2, 3, 4, 5, 6, 7]

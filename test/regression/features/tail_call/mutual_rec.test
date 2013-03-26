@@ -1,4 +1,4 @@
-blip mutual_rec.py; python3.3 mutual_rec.pyc
+blip mutual_rec.py && python3.3 mutual_rec.pyc
 <<<
 >>>
 0

@@ -1,4 +1,4 @@
-blip dict_index_found.py; python3.3 dict_index_found.pyc
+blip dict_index_found.py && python3.3 dict_index_found.pyc
 <<<
 >>>
 0

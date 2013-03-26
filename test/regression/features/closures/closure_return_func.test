@@ -1,4 +1,4 @@
-blip closure_return_func.py; python3.3 closure_return_func.pyc
+blip closure_return_func.py && python3.3 closure_return_func.pyc
 <<<
 >>>
 12

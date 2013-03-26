@@ -1,4 +1,4 @@
-blip type_conversion.py; python3.3 type_conversion.pyc
+blip type_conversion.py && python3.3 type_conversion.pyc
 <<<
 >>>
 -1.0

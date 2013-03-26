@@ -1,4 +1,4 @@
-blip singleton_list.py; python3.3 singleton_list.pyc
+blip singleton_list.py && python3.3 singleton_list.pyc
 <<<
 >>>
 [42]

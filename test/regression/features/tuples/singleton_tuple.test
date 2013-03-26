@@ -1,4 +1,4 @@
-blip singleton_tuple.py; python3.3 singleton_tuple.pyc
+blip singleton_tuple.py && python3.3 singleton_tuple.pyc
 <<<
 >>>
 (1,)

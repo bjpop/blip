@@ -1,4 +1,4 @@
-blip guarded_comprehensino.py; python3.3 guarded_comprehensino.pyc
+blip guarded_comprehensino.py && python3.3 guarded_comprehensino.pyc
 <<<
 >>>
 []

@@ -1,4 +1,4 @@
-blip empty_tuple.py; python3.3 empty_tuple.pyc
+blip empty_tuple.py && python3.3 empty_tuple.pyc
 <<<
 >>>
 ()

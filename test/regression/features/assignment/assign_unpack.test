@@ -1,4 +1,4 @@
-blip assign_unpack.py; python3.3 assign_unpack.pyc
+blip assign_unpack.py && python3.3 assign_unpack.pyc
 <<<
 >>>
 0

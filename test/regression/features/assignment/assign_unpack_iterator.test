@@ -1,4 +1,4 @@
-blip assign_unpack_iterator.py; python3.3 assign_unpack_iterator.pyc
+blip assign_unpack_iterator.py && python3.3 assign_unpack_iterator.pyc
 <<<
 >>>
 1 2 3

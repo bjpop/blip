@@ -1,4 +1,4 @@
-blip singleton_comprehension.py; python3.3 singleton_comprehension.pyc
+blip singleton_comprehension.py && python3.3 singleton_comprehension.pyc
 <<<
 >>>
 [1]

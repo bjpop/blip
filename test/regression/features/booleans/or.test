@@ -1,4 +1,4 @@
-blip or.py; python3.3 or.pyc
+blip or.py && python3.3 or.pyc
 <<<
 >>>
 True

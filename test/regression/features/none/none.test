@@ -1,4 +1,4 @@
-blip none.py; python3.3 none.pyc
+blip none.py && python3.3 none.pyc
 <<<
 >>>
 None

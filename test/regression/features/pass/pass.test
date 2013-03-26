@@ -1,4 +1,4 @@
-blip pass.py; python3.3 pass.pyc
+blip pass.py && python3.3 pass.pyc
 <<<
 >>>
 >>>2

@@ -1,4 +1,4 @@
-blip id.py; python3.3 id.pyc
+blip id.py && python3.3 id.pyc
 <<<
 >>>
 True

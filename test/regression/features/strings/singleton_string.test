@@ -1,4 +1,4 @@
-blip singleton_string.py; python3.3 singleton_string.pyc
+blip singleton_string.py && python3.3 singleton_string.pyc
 <<<
 >>>
 x

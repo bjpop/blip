@@ -1,4 +1,4 @@
-blip list_setitem.py; python3.3 list_setitem.pyc
+blip list_setitem.py && python3.3 list_setitem.pyc
 <<<
 >>>
 [0]

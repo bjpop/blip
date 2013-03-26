@@ -1,4 +1,4 @@
-blip empty_set.py; python3.3 empty_set.pyc
+blip empty_set.py && python3.3 empty_set.pyc
 <<<
 >>>
 set()

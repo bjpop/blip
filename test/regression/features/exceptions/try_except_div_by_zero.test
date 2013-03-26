@@ -1,4 +1,4 @@
-blip try_except_div_by_zero.py; python3.3 try_except_div_by_zero.pyc
+blip try_except_div_by_zero.py && python3.3 try_except_div_by_zero.pyc
 <<<
 >>>
 caught it

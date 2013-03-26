@@ -1,4 +1,4 @@
-blip string_juxtapose.py; python3.3 string_juxtapose.pyc
+blip string_juxtapose.py && python3.3 string_juxtapose.pyc
 <<<
 >>>
 Hello World

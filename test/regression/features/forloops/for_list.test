@@ -1,4 +1,4 @@
-blip for_list.py; python3.3 for_list.pyc
+blip for_list.py && python3.3 for_list.pyc
 <<<
 >>>
 1
