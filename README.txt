@@ -8,14 +8,14 @@ For example, given a Python 3 source file called foo.py, the command:
 
    blip foo.py
 
-You can specify more than one python source file on the command line;
-blip will compile them all in sequence, stopping at the first error
-encountered.
-
 produces a bytecode file called foo.pyc. The bytecode can be executed
 by passing it as an argument to a CPython interpreter:
 
    python3 foo.pyc
+
+You can specify more than one python source file on the command line;
+blip will compile them all in sequence, stopping at the first error
+encountered.
 
 The blip source tree also includes code for a program called readpyc,
 which can be used for pretty printing the contents of .pyc files:
