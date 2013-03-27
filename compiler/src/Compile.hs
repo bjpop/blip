@@ -317,7 +317,7 @@ compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ pret
 
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
--- by the interpreter for the docstring. If their is no docstring
+-- by the interpreter for the docstring. If there is no docstring
 -- then the first constant must be None
 compileFunDocString :: [StatementSpan] -> Compile ()
 compileFunDocString (firstStmt:_stmts)
