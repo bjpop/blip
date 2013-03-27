@@ -1,4 +1,17 @@
+-----------------------------------------------------------------------------
+-- |
+-- Module      : Blip.MarshalDouble
+-- Copyright   : (c) 2012, 2013 Bernie Pope
+-- License     : BSD-style
+-- Maintainer  : florbitous@gmail.com
+-- Stability   : experimental
+-- Portability : ghc
+--
+-- Convert Haskell Doubles to and from a list of bytes.
+-- 
 -- XXX not sure if this is complete or immune from endian issues.
+--
+-----------------------------------------------------------------------------
 
 module Blip.MarshalDouble (doubleToBytes, bytesToDouble) where
 
