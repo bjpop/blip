@@ -42,7 +42,9 @@ import Language.Python.Common.AST as AST
    ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
    , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
    , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
-   , ExceptClauseSpan, ImportItem (..), ImportItemSpan )
+   , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
+   , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
+   , FromItemSpan )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -245,12 +247,51 @@ instance Compilable StatementSpan where
       compileHandlers end firstHandler try_excepts
       labelNextInstruction end
    compile (Import {..}) = mapM_ compile import_items
-   -- compile (FromImport {..}) = do
+   -- XXX need to handle from __future__ 
+   compile (FromImport {..}) = do
+      let level = 0 -- XXX this should be the level of nesting
+      compileConstantEmit $ Blip.Int level
+      let names = fromItemsStrings from_items 
+          namesTuple = Blip.Tuple $ map Unicode names
+      compileConstantEmit namesTuple
+      compileFromModule from_module
+      case from_items of
+         ImportEverything {} -> do
+            emitCodeNoArg IMPORT_STAR
+         FromItems {..} -> do
+            forM_ from_items_items $ \FromItem {..} -> do
+                GlobalVar index <- lookupGlobalVar $ ident_string from_item_name
+                emitCodeArg IMPORT_FROM index
+                let storeName = case from_as_name of
+                       Nothing -> from_item_name
+                       Just asName -> asName
+                varInfo <- lookupVar $ ident_string storeName
+                emitWriteVar varInfo
+            emitCodeNoArg POP_TOP
    -- XXX should check that we are inside a loop
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
+
+compileFromModule :: ImportRelativeSpan -> Compile ()
+-- XXX what to do about the dots?
+compileFromModule (ImportRelative {..}) = do
+   let moduleName =
+          case import_relative_module of
+             Nothing -> ""
+             Just dottedNames ->
+                concat $ intersperse "." $ map ident_string dottedNames
+   GlobalVar index <- lookupGlobalVar moduleName 
+   emitCodeArg IMPORT_NAME index
+
+fromItemsStrings :: FromItemsSpan -> [Identifier]
+fromItemsStrings (ImportEverything {}) = ["*"]
+fromItemsStrings (FromItems {..}) =
+   map fromItemString from_items_items
+   where
+   fromItemString :: FromItemSpan -> Identifier
+   fromItemString (FromItem {..}) = ident_string $ from_item_name
 
 compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
 compileHandlers end handlerLabel [] = do
