@@ -1,3 +1,3 @@
-from DefinesX import x
+from definesX import x
 
 print(x)
