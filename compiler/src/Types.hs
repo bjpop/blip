@@ -11,11 +11,11 @@
 --
 -----------------------------------------------------------------------------
 module Types 
-   (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
+   ( Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier (..)) where
+   , ScopeIdentifier (..), BlockType (..) ) where
 
 import Data.Set (Set (..))
 import Blip.Bytecode (Bytecode (..))
@@ -24,6 +24,12 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Language.Python.Common.SrcLocation (SrcSpan)
+
+data BlockType
+   = ClassBlock
+   | FunctionBlock
+   | ModuleBlock
+   deriving (Eq, Show)
 
 -- information about how a variable is bound plus its offset into
 -- the appropriate structure
@@ -64,11 +70,6 @@ data AnnotatedCode
      { annotatedCode_bytecode :: Bytecode
      , annotatedCode_labels :: ![Word16]   -- instruction can be labelled zero or more times
      , annotatedCode_index :: !Word16 } 
-{-
-   | UnLabelled 
-     { annotatedCode_bytecode :: Bytecode
-     , annotatedCode_index :: !Word16 }
--}
    deriving Show
 
 type Identifier = String -- a variable name
@@ -98,6 +99,9 @@ type LabelMap = Map.Map Word16 Word16
 type VarIndex = Word16
 type IndexedVarSet = Map.Map Identifier VarIndex
 
+-- XXX we should record what kind of block we are dealing with:
+-- Module, Class or Function, so we can handle local vars
+-- appropriately.
 data BlockState = BlockState 
    { state_label :: !Word16
    , state_instructions :: [AnnotatedCode]
@@ -116,5 +120,6 @@ data BlockState = BlockState
    , state_freeVars :: IndexedVarSet
    , state_cellVars :: IndexedVarSet
    , state_argcount :: !Word32
+   , state_blockType :: !BlockType
    }
    deriving (Show)

@@ -33,7 +33,7 @@ import Types
    ( Identifier, CompileConfig (..)
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier (..) )
+   , ScopeIdentifier (..), BlockType (..), DefinitionScope (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -83,7 +83,7 @@ compileFile config path = do
       pyModule <- parseAndCheckErrors fileContents path
       let (globals, nestedScope) = topScope pyModule
       canonicalPath <- canonicalizePath path 
-      let state = initState globals emptyDefinitionScope
+      let state = initState ModuleBlock globals emptyDefinitionScope
                      nestedScope config canonicalPath
       pyc <- compileModule state (fromIntegral modSeconds)
                 (fromIntegral sizeInBytes) pyModule
@@ -128,14 +128,24 @@ scopeIdentToObjectName (FunOrClassIdentifier ident) = ident
 -- XXX check if this is a suitable name
 scopeIdentToObjectName (LambdaIdentifier _srcSpan) = "<lambda>"
 
-nestedBlock :: ScopeIdentifier -> Compile a -> Compile a
-nestedBlock scopeIdent comp = do
+nestedBlock :: BlockType -> ScopeIdentifier -> Compile a -> Compile a
+nestedBlock blockType scopeIdent comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
    (definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
-   setBlockState $ initBlockState definitionScope nestedScope
+   case blockType of
+      -- classes have their local variables set only to "__locals__",
+      -- other variables are either found in names or are free variables.
+      ClassBlock -> do
+         let localsList = ["__locals__"] 
+         let classScope = definitionScope
+                          { definitionScope_locals = Set.fromList localsList
+                          , definitionScope_params = localsList }
+         setBlockState $ initBlockState blockType classScope nestedScope
+      _other -> 
+         setBlockState $ initBlockState blockType definitionScope nestedScope
    -- set the new object name
    setObjectName $ scopeIdentToObjectName scopeIdent 
    -- run the nested computation
@@ -210,11 +220,31 @@ instance Compilable StatementSpan where
       labelNextInstruction endLoop
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
-      varInfo <- lookupVar funName
-      funBodyObj <- nestedBlock (FunOrClassIdentifier funName) $ do
+      funBodyObj <- nestedBlock FunctionBlock (FunOrClassIdentifier funName) $ do
          compileFunDocString fun_body
          compile $ Body fun_body
       compileClosure funName funBodyObj
+      varInfo <- lookupVar funName
+      emitWriteVar varInfo
+   compile (Class {..}) = do
+      let className = ident_string $ class_name
+      classBodyObj <- nestedBlock ClassBlock (FunOrClassIdentifier className) $ do
+         emitCodeArg LOAD_FAST 0
+         emitCodeNoArg STORE_LOCALS
+         varInfo <- lookupGlobalVar "__name__"
+         emitReadVar varInfo
+         varInfo <- lookupGlobalVar "__module__"
+         emitWriteVar varInfo
+         compileConstantEmit $ Unicode className
+         varInfo <- lookupGlobalVar "__qualname__"
+         emitWriteVar varInfo
+         compile $ Body class_body
+      emitCodeNoArg LOAD_BUILD_CLASS
+      compileClosure className classBodyObj
+      compileConstantEmit $ Unicode className
+      mapM compile class_args
+      emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
+      varInfo <- lookupVar className
       emitWriteVar varInfo
    -- XXX assertions appear to be turned off if the code is compiled
    -- for optimisation
@@ -354,6 +384,10 @@ compileAssignTo (AST.List {..}) = do
    emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length list_exprs
    mapM_ compileAssignTo list_exprs
 compileAssignTo (AST.Paren {..}) = compileAssignTo paren_expr
+compileAssignTo expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) = do
+   compile $ left_op_arg expr
+   GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+   emitCodeArg STORE_ATTR index
 compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ prettyText other
 
 -- Check for a docstring in the first statement of a function body.
@@ -452,6 +486,7 @@ instance Compilable ExprSpan where
       compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE
    compile (Yield { yield_expr = Just expr }) =
       compile expr >> emitCodeNoArg YIELD_VALUE 
+   -- XXX should handle keyword arguments etc.
    compile (Call {..}) = do
       compile call_fun
       mapM compile call_args
@@ -472,7 +507,7 @@ instance Compilable ExprSpan where
       compile op_arg
       compileUnaryOp operator
    compile (Lambda {..}) = do
-      funBodyObj <- nestedBlock (LambdaIdentifier expr_annot) $ do
+      funBodyObj <- nestedBlock FunctionBlock (LambdaIdentifier expr_annot) $ do
          -- make the first constant None, to indicate no doc string
          -- for the lambda
          compileConstant Blip.None

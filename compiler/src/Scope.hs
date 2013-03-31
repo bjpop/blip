@@ -178,6 +178,54 @@ nestedScope nestedScope (DefStmt (Fun {..})) = do
 nestedScope nestedScope (DefLambda (Lambda {..})) = do
    let usage = varUsage lambda_args `mappend` varUsage lambda_body
    functionNestedScope nestedScope usage $ LambdaIdentifier expr_annot
+{-
+   Classes _can_ have freeVars.
+   They don't have cellVars.
+
+   We have a problem where a class can have a free variable with the same
+   name as a "locally" defined variable. Currently we have no way of
+   disambiguating them. eg
+
+	def f():
+	   y = 3
+	   class C():
+	      y = 5
+	      def g():
+		 nonlocal y
+		 print(y)
+
+   The g() method of the C() class prints the value 3, because its free
+   variable y is bound in the body of f, not in the class definition.
+
+   The bases of a class are actually in the enclosing scope of the class
+   definition.
+
+   We record variables defined in the body of the class as locals to
+   the class, but when we compile the class we remove them, and set
+   locals and params to be only "__locals__".
+-}
+
+nestedScope (NestedScope scope) (DefStmt (Class {..})) = do
+   let Usage {..} = varUsage class_body 
+       locals = usage_assigned
+   thisNestedScope <- foldM nestedScope emptyNestedScope usage_definitions
+   enclosingScope <- ask
+   let nestedFreeVars = nestedScopeFreeVars thisNestedScope
+       -- XXX not sure about this
+       directFreeVars 
+          = ((usage_referenced `Set.difference` locals) `Set.union`
+              usage_nonlocals) `Set.intersection` enclosingScope
+       freeVars = directFreeVars `Set.union` nestedFreeVars
+   let thisDefinitionScope =
+          DefinitionScope
+          { definitionScope_params = []
+          , definitionScope_locals = locals
+          , definitionScope_freeVars = freeVars 
+          , definitionScope_cellVars = Set.empty }
+       newScope = Map.insert (FunOrClassIdentifier $ fromIdentString class_name)
+                     (thisDefinitionScope, thisNestedScope)
+                     scope
+   return $ NestedScope newScope
 
 functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> ScopeM NestedScope
 functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
@@ -188,8 +236,7 @@ functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
          foldM nestedScope emptyNestedScope usage_definitions
    modify $ Set.union usage_globals
    enclosingScope <- ask
-   let 
-       -- get all the variables which are free in the top level of
+   let -- get all the variables which are free in the top level of
        -- this current nested scope
        nestedFreeVars = nestedScopeFreeVars thisNestedScope
        -- variables which are free in nested scopes and bound in the current scope
@@ -275,9 +322,12 @@ instance VarUsage StatementSpan where
    varUsage stmt@(Fun {..})
       = mempty { usage_assigned = singleVarSet fun_name
                , usage_definitions = [DefStmt stmt] }
+   -- the bases of the Class are referenced within the scope that defines the class
+   -- as opposed to being referenced in the body of the class
    varUsage stmt@(Class {..})
       = mempty { usage_assigned = singleVarSet class_name
-               , usage_definitions = [DefStmt stmt] }
+               , usage_definitions = [DefStmt stmt] } `mappend`
+        varUsage class_args
    varUsage (Conditional {..})
       = varUsage cond_guards `mappend` varUsage cond_else
    varUsage (Assign {..})

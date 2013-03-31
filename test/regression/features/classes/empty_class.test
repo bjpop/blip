@@ -1,0 +1,7 @@
+blip empty_class.py && python3.3 empty_class.pyc
+<<<
+>>>
+<class '__main__.C'>
+<class '__main__.C'>
+>>>2
+>>>=0

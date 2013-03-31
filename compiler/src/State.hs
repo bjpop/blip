@@ -30,7 +30,7 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier )
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, BlockType (..) )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -53,8 +53,8 @@ emptyDefinitionScope =
    , definitionScope_cellVars = emptyVarSet
    }
 
-initBlockState :: DefinitionScope -> NestedScope -> BlockState
-initBlockState (DefinitionScope {..}) nestedScope = BlockState
+initBlockState :: BlockType -> DefinitionScope -> NestedScope -> BlockState
+initBlockState blockType (DefinitionScope {..}) nestedScope = BlockState
    { state_label = 0
    , state_instructions = []
    , state_labelNextInstruction = [] 
@@ -82,6 +82,7 @@ initBlockState (DefinitionScope {..}) nestedScope = BlockState
                          (fromIntegral $ Set.size definitionScope_cellVars) 
                          definitionScope_freeVars 
    , state_argcount = fromIntegral $ length definitionScope_params
+   , state_blockType = blockType
    }
 
 -- Local variables are indexed starting with parameters first, in the order
@@ -107,10 +108,10 @@ incInstructionIndex bytecode = do
    modifyBlockState $ \s -> s { state_instruction_index = nextIndex }
    return currentIndex
 
-initState :: VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
-initState globals definitionScope nestedScope config pyFilename = CompileState
+initState :: BlockType -> VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
+initState blockType globals definitionScope nestedScope config pyFilename = CompileState
    { state_config = config
-   , state_blockState = initBlockState definitionScope nestedScope
+   , state_blockState = initBlockState blockType definitionScope nestedScope
    , state_filename = pyFilename
    , state_globals = globals
    }
@@ -146,6 +147,9 @@ lookupNestedScope name = do
       Just scope -> return scope
       -- this case should never happen
       Nothing -> error $ "no scope found for: " ++ show name
+
+getBlockType :: Compile BlockType
+getBlockType = getBlockState state_blockType
    
 getFileName :: Compile FilePath
 getFileName = gets state_filename
@@ -184,12 +188,29 @@ labelNextInstruction newLabel = do
 
 emitReadVar :: VarInfo -> Compile ()
 emitReadVar (LocalVar index) = emitCodeArg LOAD_FAST index
+{-
+   blockType <- getBlockType
+   case blockType of
+      -- functions:
+      FunctionBlock -> emitCodeArg LOAD_FAST index
+      -- classes and modules:
+      _other -> emitCodeArg LOAD_NAME index
+-}
 emitReadVar (CellVar index) = emitCodeArg LOAD_DEREF index
 emitReadVar (FreeVar index) = emitCodeArg LOAD_DEREF index
 emitReadVar (GlobalVar index) = emitCodeArg LOAD_NAME index
 
 emitWriteVar :: VarInfo -> Compile ()
 emitWriteVar (LocalVar index) = emitCodeArg STORE_FAST index
+
+{- do
+   blockType <- getBlockType
+   case blockType of
+      -- functions:
+      FunctionBlock -> emitCodeArg STORE_FAST index
+      -- classes and modules:
+      _other -> emitCodeArg STORE_NAME index
+-}
 emitWriteVar (CellVar index) = emitCodeArg STORE_DEREF index
 emitWriteVar (FreeVar index) = emitCodeArg STORE_DEREF index
 emitWriteVar (GlobalVar index) = emitCodeArg STORE_NAME index
@@ -255,29 +276,40 @@ compileConstantEmit obj = do
    constantID <- compileConstant obj
    emitCodeArg LOAD_CONST constantID
 
--- check if var is:
---    cellvar
---    freevar
---    localvar
---    globalvar
--- in that order.
+{-
+
+check if var is:
+  cellvar
+  localvar
+  freevar
+  globalvar
+in that order.
+
+We check cell vars first, because a cellvar is a special type of
+local var, so it must take preference.
+
+A variable cannot be free and local at the same time.
+
+-}
+
 lookupVar :: Identifier -> Compile VarInfo
 lookupVar identifier = do
    cellvars <- getBlockState state_cellVars
    case Map.lookup identifier cellvars of
       Just index -> return $ CellVar index
       Nothing -> do
-         freevars <- getBlockState state_freeVars
-         case Map.lookup identifier freevars of
-            Just index -> return $ FreeVar index
+         locals <- getBlockState state_locals
+         case Map.lookup identifier locals of
+            Just index -> return $ LocalVar index
             Nothing -> do
-               locals <- getBlockState state_locals
-               case Map.lookup identifier locals of
-                   Just index -> return $ LocalVar index
-                   Nothing -> lookupGlobalVar identifier
+               freevars <- getBlockState state_freeVars
+               case Map.lookup identifier freevars of
+                  Just index -> return $ FreeVar index
+                  Nothing -> lookupGlobalVar identifier
 
 -- references to globals are recorded in the "names" entry
 -- in a code object.
+-- XXX this should probably be called lookupNameVar
 lookupGlobalVar :: Identifier -> Compile VarInfo
 lookupGlobalVar ident = do
    blockState <- getBlockState id
