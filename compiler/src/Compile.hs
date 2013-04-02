@@ -389,6 +389,7 @@ compileFunDocString (firstStmt:_stmts)
         = do compileConstant $ constantToPyObject stmt_expr
              return ()
    | otherwise = compileConstant Blip.None >> return ()
+compileFunDocString [] = compileConstant Blip.None >> return ()
 
 compileClassModuleDocString :: [StatementSpan] -> Compile ()
 compileClassModuleDocString (firstStmt:_stmts)
@@ -398,6 +399,7 @@ compileClassModuleDocString (firstStmt:_stmts)
              varInfo <- lookupGlobalVar "__doc__"
              emitWriteVar varInfo
    | otherwise = return ()
+compileClassModuleDocString [] = return ()
 
 compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
 compileGuard restLabel (expr, stmts) = do
