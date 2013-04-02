@@ -121,6 +121,7 @@ instance Compilable ModuleSpan where
    compile (Module stmts) = do
       maybeDumpScope 
       setObjectName "<module>"
+      compileClassModuleDocString stmts
       compile $ Body stmts
 
 nestedBlock :: BlockType -> ScopeIdentifier -> Compile a -> Compile a
@@ -224,6 +225,7 @@ instance Compilable StatementSpan where
          compileConstantEmit $ Unicode className
          varInfo <- lookupGlobalVar "__qualname__"
          emitWriteVar varInfo
+         compileClassModuleDocString class_body
          compile $ Body class_body
       emitCodeNoArg LOAD_BUILD_CLASS
       compileClosure className classBodyObj
@@ -388,6 +390,15 @@ compileFunDocString (firstStmt:_stmts)
              return ()
    | otherwise = compileConstant Blip.None >> return ()
 
+compileClassModuleDocString :: [StatementSpan] -> Compile ()
+compileClassModuleDocString (firstStmt:_stmts)
+   | StmtExpr {..} <- firstStmt,
+     Strings {} <- stmt_expr
+        = do compileConstantEmit $ constantToPyObject stmt_expr
+             varInfo <- lookupGlobalVar "__doc__"
+             emitWriteVar varInfo
+   | otherwise = return ()
+
 compileGuard :: Word16 -> (ExprSpan, [StatementSpan]) -> Compile ()
 compileGuard restLabel (expr, stmts) = do
    compile expr
@@ -481,6 +492,7 @@ instance Compilable ExprSpan where
       compile subscriptee
       compile subscript_expr
       emitCodeNoArg BINARY_SUBSCR
+   -- XXX need to support operator chaining.
    compile exp@(BinaryOp {..})
       | isBoolean operator = compileBoolean exp
       | isComparison operator = compileComparison exp

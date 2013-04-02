@@ -1,0 +1,6 @@
+blip class_docstring.py && python3.3 class_docstring.pyc
+<<<
+>>>
+a class docstring
+>>>2
+>>>=0
