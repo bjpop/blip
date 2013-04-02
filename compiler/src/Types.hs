@@ -15,7 +15,7 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier (..), BlockType (..) ) where
+   , ScopeIdentifier (..) ) where
 
 import Data.Set (Set (..))
 import Blip.Bytecode (Bytecode (..))
@@ -24,12 +24,6 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Language.Python.Common.SrcLocation (SrcSpan)
-
-data BlockType
-   = ClassBlock
-   | FunctionBlock
-   | ModuleBlock
-   deriving (Eq, Show)
 
 -- information about how a variable is bound plus its offset into
 -- the appropriate structure
@@ -51,17 +45,7 @@ data DefinitionScope
      }
      deriving Show
 
-
 type ScopeIdentifier = SrcSpan
-{-
-data ScopeIdentifier
-   -- XXX perhaps we can use the start row,col of the lambda
-   -- rather than the whole src span?
-   -- Also, have to guard against empty src spans.
-   = LambdaIdentifier SrcSpan
-   | FunOrClassIdentifier Identifier
-   deriving (Eq, Ord, Show)
--}
 
 newtype NestedScope
    = NestedScope (Map.Map ScopeIdentifier (String, DefinitionScope, NestedScope))
@@ -104,9 +88,6 @@ type LabelMap = Map.Map Word16 Word16
 type VarIndex = Word16
 type IndexedVarSet = Map.Map Identifier VarIndex
 
--- XXX we should record what kind of block we are dealing with:
--- Module, Class or Function, so we can handle local vars
--- appropriately.
 data BlockState = BlockState 
    { state_label :: !Word16
    , state_instructions :: [AnnotatedCode]
@@ -126,6 +107,5 @@ data BlockState = BlockState
    , state_cellVars :: IndexedVarSet
    , state_classLocals :: VarSet
    , state_argcount :: !Word32
-   , state_blockType :: !BlockType
    }
    deriving (Show)

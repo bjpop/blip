@@ -33,7 +33,7 @@ import Types
    ( Identifier, CompileConfig (..)
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier (..), BlockType (..), DefinitionScope (..) )
+   , ScopeIdentifier (..), DefinitionScope (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
@@ -83,7 +83,7 @@ compileFile config path = do
       pyModule <- parseAndCheckErrors fileContents path
       let (globals, nestedScope) = topScope pyModule
       canonicalPath <- canonicalizePath path 
-      let state = initState ModuleBlock globals emptyDefinitionScope
+      let state = initState globals emptyDefinitionScope
                      nestedScope config canonicalPath
       pyc <- compileModule state (fromIntegral modSeconds)
                 (fromIntegral sizeInBytes) pyModule
@@ -124,14 +124,14 @@ instance Compilable ModuleSpan where
       compileClassModuleDocString stmts
       compile $ Body stmts
 
-nestedBlock :: BlockType -> ScopeIdentifier -> Compile a -> Compile a
-nestedBlock blockType scopeIdent comp = do
+nestedBlock :: ScopeIdentifier -> Compile a -> Compile a
+nestedBlock scopeIdent comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
    (name, definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
-   setBlockState $ initBlockState blockType definitionScope nestedScope
+   setBlockState $ initBlockState definitionScope nestedScope
    -- set the new object name
    -- setObjectName $ scopeIdentToObjectName scopeIdent 
    setObjectName name
@@ -207,7 +207,7 @@ instance Compilable StatementSpan where
       labelNextInstruction endLoop
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
-      funBodyObj <- nestedBlock FunctionBlock stmt_annot $ do
+      funBodyObj <- nestedBlock stmt_annot $ do
          compileFunDocString fun_body
          compile $ Body fun_body
       compileClosure funName funBodyObj
@@ -215,7 +215,7 @@ instance Compilable StatementSpan where
       emitWriteVar varInfo
    compile (Class {..}) = do
       let className = ident_string $ class_name
-      classBodyObj <- nestedBlock ClassBlock stmt_annot $ do
+      classBodyObj <- nestedBlock stmt_annot $ do
          emitCodeArg LOAD_FAST 0
          emitCodeNoArg STORE_LOCALS
          varInfo <- lookupGlobalVar "__name__"
@@ -505,7 +505,7 @@ instance Compilable ExprSpan where
       compile op_arg
       compileUnaryOp operator
    compile (Lambda {..}) = do
-      funBodyObj <- nestedBlock FunctionBlock expr_annot $ do
+      funBodyObj <- nestedBlock expr_annot $ do
          -- make the first constant None, to indicate no doc string
          -- for the lambda
          compileConstant Blip.None

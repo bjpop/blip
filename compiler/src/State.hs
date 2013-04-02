@@ -30,7 +30,7 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, BlockType (..) )
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -54,8 +54,8 @@ emptyDefinitionScope =
    , definitionScope_classLocals = emptyVarSet
    }
 
-initBlockState :: BlockType -> DefinitionScope -> NestedScope -> BlockState
-initBlockState blockType (DefinitionScope {..}) nestedScope = BlockState
+initBlockState :: DefinitionScope -> NestedScope -> BlockState
+initBlockState (DefinitionScope {..}) nestedScope = BlockState
    { state_label = 0
    , state_instructions = []
    , state_labelNextInstruction = [] 
@@ -84,7 +84,6 @@ initBlockState blockType (DefinitionScope {..}) nestedScope = BlockState
                          definitionScope_freeVars 
    , state_classLocals = definitionScope_classLocals 
    , state_argcount = fromIntegral $ length definitionScope_params
-   , state_blockType = blockType
    }
 
 -- Local variables are indexed starting with parameters first, in the order
@@ -110,10 +109,10 @@ incInstructionIndex bytecode = do
    modifyBlockState $ \s -> s { state_instruction_index = nextIndex }
    return currentIndex
 
-initState :: BlockType -> VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
-initState blockType globals definitionScope nestedScope config pyFilename = CompileState
+initState :: VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
+initState globals definitionScope nestedScope config pyFilename = CompileState
    { state_config = config
-   , state_blockState = initBlockState blockType definitionScope nestedScope
+   , state_blockState = initBlockState definitionScope nestedScope
    , state_filename = pyFilename
    , state_globals = globals
    }
@@ -150,9 +149,6 @@ lookupNestedScope scopeIdent = do
       -- this case should never happen
       Nothing -> error $ "no scope found for: " ++ show scopeIdent
 
-getBlockType :: Compile BlockType
-getBlockType = getBlockState state_blockType
-   
 getFileName :: Compile FilePath
 getFileName = gets state_filename
 
