@@ -26,7 +26,7 @@ import State
    , getObjectName, setObjectName, getLastInstruction, getGlobals
    , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
    , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar
-   , lookupGlobalVar )
+   , lookupGlobalVar, lookupClosureVar )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -135,6 +135,7 @@ nestedBlock blockType scopeIdent comp = do
    -- set the new block state to initial values, and the
    -- scope of the current definition
    (definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
+{-
    case blockType of
       -- classes have their local variables set only to "__locals__",
       -- other variables are either found in names or are free variables.
@@ -146,6 +147,8 @@ nestedBlock blockType scopeIdent comp = do
          setBlockState $ initBlockState blockType classScope nestedScope
       _other -> 
          setBlockState $ initBlockState blockType definitionScope nestedScope
+-}
+   setBlockState $ initBlockState blockType definitionScope nestedScope
    -- set the new object name
    setObjectName $ scopeIdentToObjectName scopeIdent 
    -- run the nested computation
@@ -539,14 +542,14 @@ compileClosure name obj = do
                                      -- appears to be related to keyword args, and defaults
       else do
          forM_ freeVarIdentifiers $ \var -> do
-            varInfo <- lookupVar var
+            maybeVarInfo <- lookupClosureVar var
             -- we don't use emitReadVar because it would generate
             -- LOAD_DEREF instructions, but we want LOAD_CLOSURE
             -- instead.
-            case varInfo of
-               CellVar index -> emitCodeArg LOAD_CLOSURE index
-               FreeVar index -> emitCodeArg LOAD_CLOSURE index
-               other -> error "closure free variable not cell or free var in outer context"
+            case maybeVarInfo of
+               Just (CellVar index) -> emitCodeArg LOAD_CLOSURE index
+               Just (FreeVar index) -> emitCodeArg LOAD_CLOSURE index
+               Nothing -> error "closure free variable not cell or free var in outer context"
          emitCodeArg BUILD_TUPLE $ fromIntegral numFreeVars
          compileConstantEmit obj 
          compileConstantEmit $ Unicode name

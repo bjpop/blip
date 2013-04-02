@@ -47,6 +47,7 @@ data DefinitionScope
      , definitionScope_locals :: !VarSet
      , definitionScope_freeVars :: !VarSet
      , definitionScope_cellVars :: !VarSet
+     , definitionScope_classLocals :: !VarSet
      }
      deriving Show
 
@@ -119,6 +120,7 @@ data BlockState = BlockState
    , state_locals :: IndexedVarSet
    , state_freeVars :: IndexedVarSet
    , state_cellVars :: IndexedVarSet
+   , state_classLocals :: VarSet
    , state_argcount :: !Word32
    , state_blockType :: !BlockType
    }

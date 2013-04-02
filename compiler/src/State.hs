@@ -22,7 +22,7 @@ module State
    , getObjectName, setObjectName, getLastInstruction, getLabelMap, getGlobals
    , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
    , lookupNestedScope, indexedVarSetKeys, lookupVar, lookupGlobalVar
-   , emitReadVar, emitWriteVar )
+   , emitReadVar, emitWriteVar, lookupClosureVar )
    where
 
 import Monad (Compile (..))
@@ -51,6 +51,7 @@ emptyDefinitionScope =
    , definitionScope_locals = emptyVarSet
    , definitionScope_freeVars = emptyVarSet
    , definitionScope_cellVars = emptyVarSet
+   , definitionScope_classLocals = emptyVarSet
    }
 
 initBlockState :: BlockType -> DefinitionScope -> NestedScope -> BlockState
@@ -81,6 +82,7 @@ initBlockState blockType (DefinitionScope {..}) nestedScope = BlockState
    , state_freeVars = indexedVarSet
                          (fromIntegral $ Set.size definitionScope_cellVars) 
                          definitionScope_freeVars 
+   , state_classLocals = definitionScope_classLocals 
    , state_argcount = fromIntegral $ length definitionScope_params
    , state_blockType = blockType
    }
@@ -188,29 +190,12 @@ labelNextInstruction newLabel = do
 
 emitReadVar :: VarInfo -> Compile ()
 emitReadVar (LocalVar index) = emitCodeArg LOAD_FAST index
-{-
-   blockType <- getBlockType
-   case blockType of
-      -- functions:
-      FunctionBlock -> emitCodeArg LOAD_FAST index
-      -- classes and modules:
-      _other -> emitCodeArg LOAD_NAME index
--}
 emitReadVar (CellVar index) = emitCodeArg LOAD_DEREF index
 emitReadVar (FreeVar index) = emitCodeArg LOAD_DEREF index
 emitReadVar (GlobalVar index) = emitCodeArg LOAD_NAME index
 
 emitWriteVar :: VarInfo -> Compile ()
 emitWriteVar (LocalVar index) = emitCodeArg STORE_FAST index
-
-{- do
-   blockType <- getBlockType
-   case blockType of
-      -- functions:
-      FunctionBlock -> emitCodeArg STORE_FAST index
-      -- classes and modules:
-      _other -> emitCodeArg STORE_NAME index
--}
 emitWriteVar (CellVar index) = emitCodeArg STORE_DEREF index
 emitWriteVar (FreeVar index) = emitCodeArg STORE_DEREF index
 emitWriteVar (GlobalVar index) = emitCodeArg STORE_NAME index
@@ -281,6 +266,7 @@ compileConstantEmit obj = do
 check if var is:
   cellvar
   localvar
+  classLocal
   freevar
   globalvar
 in that order.
@@ -302,10 +288,25 @@ lookupVar identifier = do
          case Map.lookup identifier locals of
             Just index -> return $ LocalVar index
             Nothing -> do
-               freevars <- getBlockState state_freeVars
-               case Map.lookup identifier freevars of
-                  Just index -> return $ FreeVar index
-                  Nothing -> lookupGlobalVar identifier
+               classLocals <- getBlockState state_classLocals
+               if identifier `Set.member` classLocals 
+                  then lookupGlobalVar identifier
+                  else do
+                     freevars <- getBlockState state_freeVars
+                     case Map.lookup identifier freevars of
+                        Just index -> return $ FreeVar index
+                        Nothing -> lookupGlobalVar identifier
+
+lookupClosureVar :: Identifier -> Compile (Maybe VarInfo)
+lookupClosureVar identifier = do
+   cellvars <- getBlockState state_cellVars
+   case Map.lookup identifier cellvars of
+      Just index -> return $ Just $ CellVar index
+      Nothing -> do
+         freevars <- getBlockState state_freeVars
+         case Map.lookup identifier freevars of
+            Just index -> return $ Just $ FreeVar index
+            Nothing -> return Nothing
 
 -- references to globals are recorded in the "names" entry
 -- in a code object.

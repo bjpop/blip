@@ -32,6 +32,21 @@ maxStackDepth = return 100
 
 type BytecodeMap = Map.Map Word16 [Bytecode]
 
+type InstructionSeen = Set.Set Word16
+
+data StackDepthState =
+   StackDepthState
+   { stackDepth_bytecodeMap :: BytecodeMap
+   , stackDepth_maxDepth :: !Word32
+   }
+
+type StackDepth = RWS InstructionSeen () StackDepthState
+
+{-
+maxStackDepth :: [AnnotatedCode] -> Word32
+maxStackDepth code = 
+-}
+
 -- Compute the effect of each opcode on the depth of the stack.
 -- This is used to compute an upper bound on the depth of the stack
 -- for each code object. It is safe to over-estimate the depth of the

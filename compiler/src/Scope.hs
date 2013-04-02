@@ -119,7 +119,8 @@ instance Pretty DefinitionScope where
       prettyVarList "params:" definitionScope_params $$
       prettyVarSet "locals:" definitionScope_locals $$
       prettyVarSet "freevars:" definitionScope_freeVars $$
-      prettyVarSet "cellvars:" definitionScope_cellVars
+      prettyVarSet "cellvars:" definitionScope_cellVars $$
+      prettyVarSet "class locals:" definitionScope_classLocals
 
 prettyVarList :: String -> [Identifier] -> Doc
 prettyVarList label list 
@@ -199,29 +200,27 @@ nestedScope nestedScope (DefLambda (Lambda {..})) = do
 
    The bases of a class are actually in the enclosing scope of the class
    definition.
-
-   We record variables defined in the body of the class as locals to
-   the class, but when we compile the class we remove them, and set
-   locals and params to be only "__locals__".
 -}
 
 nestedScope (NestedScope scope) (DefStmt (Class {..})) = do
    let Usage {..} = varUsage class_body 
-       locals = usage_assigned
+       classLocals = usage_assigned
+       paramsList = ["__locals__"]
    thisNestedScope <- foldM nestedScope emptyNestedScope usage_definitions
    enclosingScope <- ask
    let nestedFreeVars = nestedScopeFreeVars thisNestedScope
        -- XXX not sure about this
        directFreeVars 
-          = ((usage_referenced `Set.difference` locals) `Set.union`
+          = ((usage_referenced `Set.difference` classLocals) `Set.union`
               usage_nonlocals) `Set.intersection` enclosingScope
        freeVars = directFreeVars `Set.union` nestedFreeVars
    let thisDefinitionScope =
           DefinitionScope
-          { definitionScope_params = []
-          , definitionScope_locals = locals
+          { definitionScope_params = paramsList
+          , definitionScope_locals = Set.fromList paramsList
           , definitionScope_freeVars = freeVars 
-          , definitionScope_cellVars = Set.empty }
+          , definitionScope_cellVars = Set.empty
+          , definitionScope_classLocals = classLocals }
        newScope = Map.insert (FunOrClassIdentifier $ fromIdentString class_name)
                      (thisDefinitionScope, thisNestedScope)
                      scope
@@ -256,7 +255,8 @@ functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
           { definitionScope_params = usage_params
           , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
-          , definitionScope_cellVars = cellVars }
+          , definitionScope_cellVars = cellVars
+          , definitionScope_classLocals = Set.empty }
        newScope = Map.insert scopeIdentifier 
                      (thisDefinitionScope, thisNestedScope)
                      scope
