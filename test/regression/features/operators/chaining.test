@@ -1,0 +1,7 @@
+blip chaining.py && python3.3 chaining.pyc
+<<<
+>>>
+True
+False
+>>>2
+>>>=0
