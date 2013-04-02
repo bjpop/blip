@@ -2,7 +2,7 @@
     PatternGuards, RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Main
+-- Module      : Compile
 -- Copyright   : (c) 2012, 2013 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
@@ -123,34 +123,17 @@ instance Compilable ModuleSpan where
       setObjectName "<module>"
       compile $ Body stmts
 
-scopeIdentToObjectName :: ScopeIdentifier -> String
-scopeIdentToObjectName (FunOrClassIdentifier ident) = ident
--- XXX check if this is a suitable name
-scopeIdentToObjectName (LambdaIdentifier _srcSpan) = "<lambda>"
-
 nestedBlock :: BlockType -> ScopeIdentifier -> Compile a -> Compile a
 nestedBlock blockType scopeIdent comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
-   (definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
-{-
-   case blockType of
-      -- classes have their local variables set only to "__locals__",
-      -- other variables are either found in names or are free variables.
-      ClassBlock -> do
-         let localsList = ["__locals__"] 
-         let classScope = definitionScope
-                          { definitionScope_locals = Set.fromList localsList
-                          , definitionScope_params = localsList }
-         setBlockState $ initBlockState blockType classScope nestedScope
-      _other -> 
-         setBlockState $ initBlockState blockType definitionScope nestedScope
--}
+   (name, definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
    setBlockState $ initBlockState blockType definitionScope nestedScope
    -- set the new object name
-   setObjectName $ scopeIdentToObjectName scopeIdent 
+   -- setObjectName $ scopeIdentToObjectName scopeIdent 
+   setObjectName name
    -- run the nested computation
    result <- comp
    -- restore the original block state
@@ -223,7 +206,7 @@ instance Compilable StatementSpan where
       labelNextInstruction endLoop
    compile (Fun {..}) = do
       let funName = ident_string $ fun_name
-      funBodyObj <- nestedBlock FunctionBlock (FunOrClassIdentifier funName) $ do
+      funBodyObj <- nestedBlock FunctionBlock stmt_annot $ do
          compileFunDocString fun_body
          compile $ Body fun_body
       compileClosure funName funBodyObj
@@ -231,7 +214,7 @@ instance Compilable StatementSpan where
       emitWriteVar varInfo
    compile (Class {..}) = do
       let className = ident_string $ class_name
-      classBodyObj <- nestedBlock ClassBlock (FunOrClassIdentifier className) $ do
+      classBodyObj <- nestedBlock ClassBlock stmt_annot $ do
          emitCodeArg LOAD_FAST 0
          emitCodeNoArg STORE_LOCALS
          varInfo <- lookupGlobalVar "__name__"
@@ -510,7 +493,7 @@ instance Compilable ExprSpan where
       compile op_arg
       compileUnaryOp operator
    compile (Lambda {..}) = do
-      funBodyObj <- nestedBlock FunctionBlock (LambdaIdentifier expr_annot) $ do
+      funBodyObj <- nestedBlock FunctionBlock expr_annot $ do
          -- make the first constant None, to indicate no doc string
          -- for the lambda
          compileConstant Blip.None

@@ -99,19 +99,14 @@ type CellVars = VarSet
 type FreeVars = VarSet
 type EnclosingVars = VarSet
 
-instance Pretty ScopeIdentifier where
-   -- XXX fixme printing of lambda location
-   pretty (LambdaIdentifier srcloc) = text "lambda"
-   pretty (FunOrClassIdentifier identifier) = text identifier
-
 instance Pretty NestedScope where
    pretty (NestedScope scope) =
       vcat $ map prettyLocalScope identsScopes
       where
       identsScopes = Map.toList scope
-      prettyLocalScope :: (ScopeIdentifier, (DefinitionScope, NestedScope)) -> Doc
-      prettyLocalScope (identifier, (defScope, nestedScope)) =
-         pretty identifier <+> text "->" $$ 
+      prettyLocalScope :: (ScopeIdentifier, (String, DefinitionScope, NestedScope)) -> Doc
+      prettyLocalScope (span, (identifier, defScope, nestedScope)) =
+         text identifier <+> text "->" $$ 
          nest 5 (pretty defScope $$ pretty nestedScope)
 
 instance Pretty DefinitionScope where
@@ -174,18 +169,15 @@ nestedScope nestedScope (DefStmt (Fun {..})) = do
    let usage = varUsage fun_args `mappend`
                varUsage fun_body `mappend`
                varUsage fun_result_annotation
-   functionNestedScope nestedScope usage
-      (FunOrClassIdentifier $ fromIdentString fun_name)
+   functionNestedScope nestedScope usage stmt_annot $ fromIdentString fun_name
 nestedScope nestedScope (DefLambda (Lambda {..})) = do
    let usage = varUsage lambda_args `mappend` varUsage lambda_body
-   functionNestedScope nestedScope usage $ LambdaIdentifier expr_annot
+   functionNestedScope nestedScope usage expr_annot "<lambda>" 
 {-
-   Classes _can_ have freeVars.
-   They don't have cellVars.
+   Classes can have freeVars, but they don't have cellVars.
 
    We have a problem where a class can have a free variable with the same
-   name as a "locally" defined variable. Currently we have no way of
-   disambiguating them. eg
+   name as a "locally" defined variable. 
 
 	def f():
 	   y = 3
@@ -197,6 +189,11 @@ nestedScope nestedScope (DefLambda (Lambda {..})) = do
 
    The g() method of the C() class prints the value 3, because its free
    variable y is bound in the body of f, not in the class definition.
+
+   We disambiguate them by recording the locally defined variables in a class
+   body as classLocals (instead of locals). When we lookup a variable during
+   compilation we are careful to check whether the variable is classLocal
+   before checking whether it is a free variable.
 
    The bases of a class are actually in the enclosing scope of the class
    definition.
@@ -221,13 +218,13 @@ nestedScope (NestedScope scope) (DefStmt (Class {..})) = do
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = Set.empty
           , definitionScope_classLocals = classLocals }
-       newScope = Map.insert (FunOrClassIdentifier $ fromIdentString class_name)
-                     (thisDefinitionScope, thisNestedScope)
+       newScope = Map.insert stmt_annot 
+                     (fromIdentString class_name, thisDefinitionScope, thisNestedScope)
                      scope
    return $ NestedScope newScope
 
-functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> ScopeM NestedScope
-functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
+functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> String -> ScopeM NestedScope
+functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier name = do
    let locals = (usage_assigned `Set.difference` 
                  usage_globals `Set.difference`
                  usage_nonlocals) `Set.union` (Set.fromList usage_params)
@@ -258,7 +255,7 @@ functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier = do
           , definitionScope_cellVars = cellVars
           , definitionScope_classLocals = Set.empty }
        newScope = Map.insert scopeIdentifier 
-                     (thisDefinitionScope, thisNestedScope)
+                     (name, thisDefinitionScope, thisNestedScope)
                      scope
    return $ NestedScope newScope
 
@@ -268,8 +265,9 @@ nestedScopeFreeVars :: NestedScope -> FreeVars
 nestedScopeFreeVars (NestedScope scope)
    = Set.unions $ map getFreeVars $ elems scope
    where
-   getFreeVars :: (DefinitionScope, NestedScope) -> FreeVars
-   getFreeVars (definitionScope, _) = definitionScope_freeVars definitionScope
+   getFreeVars :: (String, DefinitionScope, NestedScope) -> FreeVars
+   getFreeVars (_name, definitionScope, _nestedScope) =
+      definitionScope_freeVars definitionScope
 
 instance Monoid Usage where
    mempty = Usage

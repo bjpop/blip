@@ -51,6 +51,9 @@ data DefinitionScope
      }
      deriving Show
 
+
+type ScopeIdentifier = SrcSpan
+{-
 data ScopeIdentifier
    -- XXX perhaps we can use the start row,col of the lambda
    -- rather than the whole src span?
@@ -58,9 +61,10 @@ data ScopeIdentifier
    = LambdaIdentifier SrcSpan
    | FunOrClassIdentifier Identifier
    deriving (Eq, Ord, Show)
+-}
 
 newtype NestedScope
-   = NestedScope (Map.Map ScopeIdentifier (DefinitionScope, NestedScope))
+   = NestedScope (Map.Map ScopeIdentifier (String, DefinitionScope, NestedScope))
    deriving Show
 
 data Dumpable = DumpScope {- | something else -}

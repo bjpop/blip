@@ -142,13 +142,13 @@ getGlobals = gets state_globals
 getNestedScope :: Compile NestedScope
 getNestedScope = getBlockState state_nestedScope
 
-lookupNestedScope :: ScopeIdentifier -> Compile (DefinitionScope, NestedScope)
-lookupNestedScope name = do
+lookupNestedScope :: ScopeIdentifier -> Compile (String, DefinitionScope, NestedScope)
+lookupNestedScope scopeIdent = do
    NestedScope nestedScope <- getNestedScope
-   case Map.lookup name nestedScope of
+   case Map.lookup scopeIdent nestedScope of
       Just scope -> return scope
       -- this case should never happen
-      Nothing -> error $ "no scope found for: " ++ show name
+      Nothing -> error $ "no scope found for: " ++ show scopeIdent
 
 getBlockType :: Compile BlockType
 getBlockType = getBlockState state_blockType
@@ -264,17 +264,20 @@ compileConstantEmit obj = do
 {-
 
 check if var is:
+
   cellvar
   localvar
   classLocal
   freevar
   globalvar
+
 in that order.
 
 We check cell vars first, because a cellvar is a special type of
 local var, so it must take preference.
 
-A variable cannot be free and local at the same time.
+We check classLocal before freevar because classes can have a locally
+defined variable with the same name as a free variable.
 
 -}
 
@@ -296,6 +299,13 @@ lookupVar identifier = do
                      case Map.lookup identifier freevars of
                         Just index -> return $ FreeVar index
                         Nothing -> lookupGlobalVar identifier
+
+{- lookup a variable in cell vars or free vars only.
+   We avoid looking in other places because, for example,
+   classes can have free variables with the same name as
+   locally defined variables, and we don't want to get them
+   confused.
+-}
 
 lookupClosureVar :: Identifier -> Compile (Maybe VarInfo)
 lookupClosureVar identifier = do
