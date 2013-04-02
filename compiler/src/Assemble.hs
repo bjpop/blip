@@ -14,7 +14,7 @@
 
 module Assemble (assemble) where
  
-import Utils (isJumpBytecode)
+import Utils (isJumpBytecode, isRelativeJump, isAbsoluteJump)
 import Types (BlockState (..), AnnotatedCode (..), LabelMap)
 import State (getBlockState, getLabelMap, modifyBlockState)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
@@ -39,18 +39,11 @@ applyLabelMap labelMap code =
    fixJumpTarget annotatedCode =
       annotatedCode { annotatedCode_bytecode = newBytecode }
       where
-      newBytecode =
-         case opcode bytecode of
-            JUMP_FORWARD -> relativeTarget bytecode index jumpTarget 
-            SETUP_LOOP -> relativeTarget bytecode index jumpTarget
-            POP_JUMP_IF_FALSE -> absoluteTarget bytecode jumpTarget 
-            POP_JUMP_IF_TRUE -> absoluteTarget bytecode jumpTarget 
-            JUMP_ABSOLUTE -> absoluteTarget bytecode jumpTarget 
-            JUMP_IF_FALSE_OR_POP -> absoluteTarget bytecode jumpTarget
-            JUMP_IF_TRUE_OR_POP -> absoluteTarget bytecode jumpTarget 
-            FOR_ITER -> relativeTarget bytecode index jumpTarget
-            SETUP_EXCEPT -> relativeTarget bytecode index jumpTarget
-            other -> bytecode
+      thisOpCode = opcode bytecode
+      newBytecode
+         | isRelativeJump thisOpCode = relativeTarget bytecode index jumpTarget
+         | isAbsoluteJump thisOpCode = absoluteTarget bytecode jumpTarget
+         | otherwise = bytecode
       bytecode = annotatedCode_bytecode annotatedCode
       index = annotatedCode_index annotatedCode
       jumpTarget =
