@@ -133,7 +133,6 @@ nestedBlock scopeIdent comp = do
    (name, definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
    setBlockState $ initBlockState definitionScope nestedScope
    -- set the new object name
-   -- setObjectName $ scopeIdentToObjectName scopeIdent 
    setObjectName name
    -- run the nested computation
    result <- comp

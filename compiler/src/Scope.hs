@@ -20,7 +20,7 @@
 --    OR
 --    - declared global in a nested scope
 --
--- Local variables are either (with respect to the current scope) either:
+-- Local variables are (with respect to the current scope) either:
 --    - Assigned in the current local scope AND not declared global or non-local.
 --    OR
 --    - Parameters to a function definition.
