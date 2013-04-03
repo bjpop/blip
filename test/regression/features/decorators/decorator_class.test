@@ -1,0 +1,6 @@
+blip decorator_class.py && python3.3 decorator_class.pyc
+<<<
+>>>
+Class <class '__main__.C'> was decorated
+>>>2
+>>>=0

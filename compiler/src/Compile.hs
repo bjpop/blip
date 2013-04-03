@@ -44,7 +44,7 @@ import Language.Python.Common.AST as AST
    , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
-   , FromItemSpan )
+   , FromItemSpan, DecoratorSpan, Decorator (..) )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -56,7 +56,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort, intersperse)
-import Control.Monad (unless, forM_, when)
+import Control.Monad (unless, forM_, when, replicateM_)
 import Control.Exception (try)
 import System.IO.Error (IOError, userError, ioError)
 import Control.Monad.Trans (liftIO)
@@ -204,35 +204,8 @@ instance Compilable StatementSpan where
       emitCodeNoArg POP_BLOCK
       compile for_else
       labelNextInstruction endLoop
-   compile (Fun {..}) = do
-      let funName = ident_string $ fun_name
-      funBodyObj <- nestedBlock stmt_annot $ do
-         compileFunDocString fun_body
-         compile $ Body fun_body
-      compileClosure funName funBodyObj
-      varInfo <- lookupVar funName
-      emitWriteVar varInfo
-   compile (Class {..}) = do
-      let className = ident_string $ class_name
-      classBodyObj <- nestedBlock stmt_annot $ do
-         emitCodeArg LOAD_FAST 0
-         emitCodeNoArg STORE_LOCALS
-         varInfo <- lookupGlobalVar "__name__"
-         emitReadVar varInfo
-         varInfo <- lookupGlobalVar "__module__"
-         emitWriteVar varInfo
-         compileConstantEmit $ Unicode className
-         varInfo <- lookupGlobalVar "__qualname__"
-         emitWriteVar varInfo
-         compileClassModuleDocString class_body
-         compile $ Body class_body
-      emitCodeNoArg LOAD_BUILD_CLASS
-      compileClosure className classBodyObj
-      compileConstantEmit $ Unicode className
-      mapM compile class_args
-      emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
-      varInfo <- lookupVar className
-      emitWriteVar varInfo
+   compile stmt@(Fun {..}) = compileFun stmt []
+   compile stmt@(Class {..}) = compileClass stmt []
    -- XXX assertions appear to be turned off if the code is compiled
    -- for optimisation
    -- If the assertion expression is a tuple of non-zero length, then
@@ -289,7 +262,77 @@ instance Compilable StatementSpan where
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
+   compile (Decorated {..}) =
+      case decorated_def of
+         Fun {} -> compileFun decorated_def decorated_decorators
+         Class {} -> compileClass decorated_def decorated_decorators
+         other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
+
+instance Compilable DecoratorSpan where
+   type CompileResult DecoratorSpan = ()
+   compile dec@(Decorator {..}) = do
+      compileDottedName decorator_name
+      mapM_ compile decorator_args
+      -- XXX do we need a call here?
+      let numDecorators = length decorator_args
+      when (numDecorators > 0) $ do
+          emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
+      where
+      compileDottedName [name] = do
+         varInfo <- lookupVar $ ident_string name
+         emitReadVar varInfo
+      compileDottedName (name1:name2:rest) = do
+         GlobalVar index <- lookupGlobalVar $ ident_string name1
+         emitCodeArg LOAD_ATTR index
+         compileDottedName (name2:rest)
+      compileDottedName [] =
+         error $ "decorator with no name: " ++ prettyText dec
+
+withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
+withDecorators decorators comp = do
+   -- push each of the decorators on the stack
+   compile decorators
+   -- run the enclosed computation
+   comp
+   -- call each of the decorators
+   replicateM_ (length decorators) $ 
+      emitCodeArg CALL_FUNCTION 1
+
+compileFun :: StatementSpan -> [DecoratorSpan] -> Compile ()
+compileFun (Fun {..}) decorators = do
+   let funName = ident_string $ fun_name
+   withDecorators decorators $ do
+      funBodyObj <- nestedBlock stmt_annot $ do
+         compileFunDocString fun_body
+         compile $ Body fun_body
+      compileClosure funName funBodyObj
+   varInfo <- lookupVar funName
+   emitWriteVar varInfo
+
+compileClass :: StatementSpan -> [DecoratorSpan] -> Compile ()
+compileClass (Class {..}) decorators = do
+   let className = ident_string $ class_name
+   withDecorators decorators $ do
+      classBodyObj <- nestedBlock stmt_annot $ do
+         emitCodeArg LOAD_FAST 0
+         emitCodeNoArg STORE_LOCALS
+         varInfo <- lookupGlobalVar "__name__"
+         emitReadVar varInfo
+         varInfo <- lookupGlobalVar "__module__"
+         emitWriteVar varInfo
+         compileConstantEmit $ Unicode className
+         varInfo <- lookupGlobalVar "__qualname__"
+         emitWriteVar varInfo
+         compileClassModuleDocString class_body
+         compile $ Body class_body
+      emitCodeNoArg LOAD_BUILD_CLASS
+      compileClosure className classBodyObj
+      compileConstantEmit $ Unicode className
+      mapM compile class_args
+      emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
+   varInfo <- lookupVar className
+   emitWriteVar varInfo
 
 compileFromModule :: ImportRelativeSpan -> Compile ()
 -- XXX what to do about the dots?

@@ -1,0 +1,8 @@
+blip multi_decorator.py && python3.3 multi_decorator.pyc
+<<<
+>>>
+h called on f
+g called on f
+f was called
+>>>2
+>>>=0
