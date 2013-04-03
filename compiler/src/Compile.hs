@@ -273,10 +273,9 @@ instance Compilable DecoratorSpan where
    type CompileResult DecoratorSpan = ()
    compile dec@(Decorator {..}) = do
       compileDottedName decorator_name
-      mapM_ compile decorator_args
-      -- XXX do we need a call here?
       let numDecorators = length decorator_args
       when (numDecorators > 0) $ do
+          mapM_ compile decorator_args
           emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
       where
       compileDottedName [name] = do
