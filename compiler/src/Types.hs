@@ -58,7 +58,7 @@ data AnnotatedCode
    = AnnotatedCode 
      { annotatedCode_bytecode :: Bytecode
      , annotatedCode_labels :: ![Word16]   -- instruction can be labelled zero or more times
-     , annotatedCode_index :: !Word16 } 
+     , annotatedCode_index :: !Word16 }    -- byte offset of the instruction within this sequence of bytecode
    deriving Show
 
 type Identifier = String -- a variable name
