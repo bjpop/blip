@@ -278,6 +278,15 @@ instance Compilable DecoratorSpan where
           mapM_ compile decorator_args
           emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
       where
+      compileDottedName (name:rest) = do
+         varInfo <- lookupVar $ ident_string name
+         emitReadVar varInfo
+         forM_ rest $ \var -> do
+            GlobalVar index <- lookupGlobalVar $ ident_string var
+            emitCodeArg LOAD_ATTR index
+      compileDottedName [] =
+         error $ "decorator with no name: " ++ prettyText dec
+{-
       compileDottedName [name] = do
          varInfo <- lookupVar $ ident_string name
          emitReadVar varInfo
@@ -287,6 +296,7 @@ instance Compilable DecoratorSpan where
          compileDottedName (name2:rest)
       compileDottedName [] =
          error $ "decorator with no name: " ++ prettyText dec
+-}
 
 withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
 withDecorators decorators comp = do
