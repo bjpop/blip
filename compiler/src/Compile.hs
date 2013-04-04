@@ -286,17 +286,6 @@ instance Compilable DecoratorSpan where
             emitCodeArg LOAD_ATTR index
       compileDottedName [] =
          error $ "decorator with no name: " ++ prettyText dec
-{-
-      compileDottedName [name] = do
-         varInfo <- lookupVar $ ident_string name
-         emitReadVar varInfo
-      compileDottedName (name1:name2:rest) = do
-         GlobalVar index <- lookupGlobalVar $ ident_string name1
-         emitCodeArg LOAD_ATTR index
-         compileDottedName (name2:rest)
-      compileDottedName [] =
-         error $ "decorator with no name: " ++ prettyText dec
--}
 
 withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
 withDecorators decorators comp = do
