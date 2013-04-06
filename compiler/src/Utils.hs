@@ -14,7 +14,7 @@
 -----------------------------------------------------------------------------
 module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
-   , isPyObjectExpr )
+   , isPyObjectExpr, isUnconditionalJump, isConditionalJump )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -82,3 +82,11 @@ isAbsoluteJump CONTINUE_LOOP = True
 isAbsoluteJump JUMP_IF_FALSE_OR_POP = True
 isAbsoluteJump JUMP_IF_TRUE_OR_POP = True
 isAbsoluteJump _ = False
+
+isUnconditionalJump :: Opcode -> Bool
+isUnconditionalJump JUMP_FORWARD = True
+isUnconditionalJump JUMP_ABSOLUTE = True
+isUnconditionalJump _other = False
+
+isConditionalJump :: Opcode -> Bool
+isConditionalJump = not . isUnconditionalJump

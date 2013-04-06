@@ -21,7 +21,7 @@ module StackDepth (maxStackDepth) where
 import Debug.Trace (trace)
 import Types (AnnotatedCode (..))
 import Monad (Compile (..))
-import Utils (isJump, isJumpBytecode, isRelativeJump)
+import Utils (isJump, isJumpBytecode, isRelativeJump, isConditionalJump)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Data.Word (Word32, Word16)
 import Control.Monad.RWS.Strict (RWS (..), runRWS, ask, local, gets, modify, when, unless)
@@ -37,6 +37,14 @@ type InstructionSeen = Set.Set InstructionIndex
 type BytecodeMap = Map.Map InstructionIndex [AnnotatedCode]
 type StackDepthCache = Map.Map InstructionIndex StackDepth
 type CalcStackDepth = RWS InstructionSeen () StackDepthState
+
+maxStackDepth :: [AnnotatedCode] -> StackDepth
+maxStackDepth code = 
+   stackDepth_maxDepth finalState
+   where
+   (_, finalState, _) = runRWS (maxStackDepthM 0 code)
+                               Set.empty $ initStackDepthState $
+                               makeBytecodeMap code
 
 makeBytecodeMap :: [AnnotatedCode] -> BytecodeMap
 makeBytecodeMap = makeBytecodeMapAcc Map.empty
@@ -63,14 +71,6 @@ initStackDepthState bytecodeMap =
    , stackDepth_maxDepth = 0 
    , stackDepth_cache = Map.empty }
 
-
-maxStackDepth :: [AnnotatedCode] -> StackDepth
-maxStackDepth code = 
-   stackDepth_maxDepth finalState
-   where
-   (_, finalState, _) = runRWS (maxStackDepthM 0 code)
-                               Set.empty $ initStackDepthState $
-                               makeBytecodeMap code
 
 isLabelled :: AnnotatedCode -> Bool
 isLabelled (AnnotatedCode {..}) = not $ null annotatedCode_labels
@@ -99,36 +99,64 @@ recordDepth index depth = do
    let newCache = Map.insert index depth stackDepthCache
    modify $ \s -> s { stackDepth_cache = newCache }
 
--- XXX check for JUMP_ABSOLUTE or JUMP_FORWARD, don't need
--- to follow code after that.
 maxStackDepthM :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
 maxStackDepthM _depth [] = return ()
 maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
+   -- check if this instruction is a jump target
    if isLabelled instruction
       then do
          seenBeforeOnPath <- isLoopBack annotatedCode_index 
          seenDeeper <- visitedDeeper annotatedCode_index depth
-         -- trace (show annotatedCode_index) (return ())
          if seenBeforeOnPath || seenDeeper
+            -- we've seen this instruction before on this path, or
+            -- we've visisted it on any path at this depth or
+            -- deeper, no point in going further down this path.
             then return ()
             else local (Set.insert annotatedCode_index) $ do
                     recordDepth annotatedCode_index depth
-                    maxStackDepthFurtherM depth code
+                    maxStackDepthFurther depth code
       else
-         maxStackDepthFurtherM depth code
+         maxStackDepthFurther depth code
    where
-   maxStackDepthFurtherM :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
-   maxStackDepthFurtherM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
+   maxStackDepthFurther :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
+   maxStackDepthFurther depth (instruction@(AnnotatedCode {..}) : rest) = do
        let newDepth = depth + codeStackEffect annotatedCode_bytecode
        updateMaxDepth newDepth
        when (isJumpBytecode annotatedCode_bytecode) $
-           maxStackDepthJumpM newDepth instruction
-       maxStackDepthM newDepth rest
+           -- follow the path of the jump
+           maxStackDepthJump newDepth instruction
+       -- follow the remaining instructions
+       -- unless the current instruction is an unconditional jump
+       when (isConditionalBytecode annotatedCode_bytecode) $
+          maxStackDepthM newDepth rest
 
-maxStackDepthJumpM :: StackDepth -> AnnotatedCode -> CalcStackDepth ()
-maxStackDepthJumpM depth instruction@(AnnotatedCode {..}) = do
+isConditionalBytecode :: Bytecode -> Bool
+isConditionalBytecode (Bytecode {..}) = isConditionalJump opcode
+
+{-
+   from CPython, compile.c:
+
+        if (instr->i_opcode == FOR_ITER) {
+                target_depth = depth-2;
+            } else if (instr->i_opcode == SETUP_FINALLY ||
+                       instr->i_opcode == SETUP_EXCEPT) {
+                target_depth = depth+3;
+                if (target_depth > maxdepth)
+                    maxdepth = target_depth;
+            }
+-}
+
+maxStackDepthJump :: StackDepth -> AnnotatedCode -> CalcStackDepth ()
+maxStackDepthJump depth instruction@(AnnotatedCode {..}) = do
+   let targetDepth =
+          case opcode annotatedCode_bytecode of
+             FOR_ITER -> depth - 2
+             SETUP_FINALLY -> depth + 3
+             SETUP_EXCEPT -> depth + 3
+             _other -> depth
+   updateMaxDepth targetDepth 
    code <- getJumpToCode instruction
-   maxStackDepthM depth code 
+   maxStackDepthM targetDepth code 
 
 getJumpToCode :: AnnotatedCode -> CalcStackDepth [AnnotatedCode]
 getJumpToCode instruction@(AnnotatedCode {..}) = do
