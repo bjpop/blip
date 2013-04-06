@@ -29,18 +29,14 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
 
-type InstructionSeen = Set.Set Word16
-
-{-
-maxStackDepth :: Compile Word32
-maxStackDepth = return 100
--}
-
+type StackDepth = Word32
+type InstructionIndex = Word16
+type InstructionSeen = Set.Set InstructionIndex
 -- Mapping from byte address (jump target) to sequence of bytecode
 -- from that address onwards.
-type BytecodeMap = Map.Map Word16 [AnnotatedCode]
-
-type StackDepthCache = Map.Map Word16 Word32
+type BytecodeMap = Map.Map InstructionIndex [AnnotatedCode]
+type StackDepthCache = Map.Map InstructionIndex StackDepth
+type CalcStackDepth = RWS InstructionSeen () StackDepthState
 
 makeBytecodeMap :: [AnnotatedCode] -> BytecodeMap
 makeBytecodeMap = makeBytecodeMapAcc Map.empty
@@ -56,7 +52,7 @@ makeBytecodeMap = makeBytecodeMapAcc Map.empty
 data StackDepthState =
    StackDepthState
    { stackDepth_bytecodeMap :: BytecodeMap
-   , stackDepth_maxDepth :: !Word32
+   , stackDepth_maxDepth :: !StackDepth
    , stackDepth_cache :: StackDepthCache 
    }
 
@@ -67,9 +63,8 @@ initStackDepthState bytecodeMap =
    , stackDepth_maxDepth = 0 
    , stackDepth_cache = Map.empty }
 
-type StackDepth = RWS InstructionSeen () StackDepthState
 
-maxStackDepth :: [AnnotatedCode] -> Word32
+maxStackDepth :: [AnnotatedCode] -> StackDepth
 maxStackDepth code = 
    stackDepth_maxDepth finalState
    where
@@ -80,7 +75,7 @@ maxStackDepth code =
 isLabelled :: AnnotatedCode -> Bool
 isLabelled (AnnotatedCode {..}) = not $ null annotatedCode_labels
 
-isLoopBack :: Word16 -> StackDepth Bool
+isLoopBack :: InstructionIndex -> CalcStackDepth Bool
 isLoopBack index = do
    seen <- ask
    return (index `Set.member` seen)
@@ -90,7 +85,7 @@ isLoopBack index = do
 -- traversing further if the previous visit was at an equal
 -- or greater depth.
 
-visitedDeeper :: Word16 -> Word32 -> StackDepth Bool
+visitedDeeper :: InstructionIndex -> StackDepth -> CalcStackDepth Bool
 visitedDeeper index newDepth = do
    stackDepthCache <- gets stackDepth_cache 
    case Map.lookup index stackDepthCache of
@@ -98,13 +93,15 @@ visitedDeeper index newDepth = do
        Nothing -> return False
        Just oldDepth -> return (oldDepth >= newDepth)
 
-recordDepth :: Word16 -> Word32 -> StackDepth ()
+recordDepth :: InstructionIndex -> StackDepth -> CalcStackDepth ()
 recordDepth index depth = do
    stackDepthCache <- gets stackDepth_cache
    let newCache = Map.insert index depth stackDepthCache
    modify $ \s -> s { stackDepth_cache = newCache }
 
-maxStackDepthM :: Word32 -> [AnnotatedCode] -> StackDepth ()
+-- XXX check for JUMP_ABSOLUTE or JUMP_FORWARD, don't need
+-- to follow code after that.
+maxStackDepthM :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
 maxStackDepthM _depth [] = return ()
 maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
    if isLabelled instruction
@@ -120,7 +117,7 @@ maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
       else
          maxStackDepthFurtherM depth code
    where
-   maxStackDepthFurtherM :: Word32 -> [AnnotatedCode] -> StackDepth ()
+   maxStackDepthFurtherM :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
    maxStackDepthFurtherM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
        let newDepth = depth + codeStackEffect annotatedCode_bytecode
        updateMaxDepth newDepth
@@ -128,12 +125,12 @@ maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
            maxStackDepthJumpM newDepth instruction
        maxStackDepthM newDepth rest
 
-maxStackDepthJumpM :: Word32 -> AnnotatedCode -> StackDepth ()
+maxStackDepthJumpM :: StackDepth -> AnnotatedCode -> CalcStackDepth ()
 maxStackDepthJumpM depth instruction@(AnnotatedCode {..}) = do
    code <- getJumpToCode instruction
    maxStackDepthM depth code 
 
-getJumpToCode :: AnnotatedCode -> StackDepth [AnnotatedCode]
+getJumpToCode :: AnnotatedCode -> CalcStackDepth [AnnotatedCode]
 getJumpToCode instruction@(AnnotatedCode {..}) = do
    let jumpTarget = 
           if isRelativeJump $ opcode annotatedCode_bytecode 
@@ -144,24 +141,24 @@ getJumpToCode instruction@(AnnotatedCode {..}) = do
        Nothing -> error $ "Jump to uknown target: " ++ show instruction
        Just code -> return code
 
-relativeTarget :: AnnotatedCode -> Word16
+relativeTarget :: AnnotatedCode -> InstructionIndex
 relativeTarget instruction@(AnnotatedCode {..}) =
    target + (annotatedCode_index + instructionSize)
    where
    instructionSize = fromIntegral $ bytecodeSize annotatedCode_bytecode
    target = getJumpTarget instruction
 
-absoluteTarget :: AnnotatedCode -> Word16
+absoluteTarget :: AnnotatedCode -> InstructionIndex
 absoluteTarget instruction@(AnnotatedCode {..}) 
    = getJumpTarget instruction
 
-getJumpTarget :: AnnotatedCode -> Word16
+getJumpTarget :: AnnotatedCode -> InstructionIndex
 getJumpTarget instruction@(AnnotatedCode {..}) =
    case args annotatedCode_bytecode of
       Nothing -> error $ "Jump instruction without argument: " ++ show instruction
       Just (Arg16 label) -> label
 
-updateMaxDepth :: Word32 -> StackDepth ()
+updateMaxDepth :: StackDepth -> CalcStackDepth ()
 updateMaxDepth depth = do
    currentMaxDepth <- gets stackDepth_maxDepth
    when (depth > currentMaxDepth) $ 
@@ -180,7 +177,7 @@ updateMaxDepth depth = do
 -- This function is supposed to be identical in behaviour to opcode_stack_effect
 -- in Python/compile.c.
 
-codeStackEffect :: Bytecode -> Word32
+codeStackEffect :: Bytecode -> StackDepth
 codeStackEffect bytecode@(Bytecode {..}) = 
    case opcode of
       POP_TOP -> -1
@@ -311,7 +308,7 @@ data StackDepthState =
    , stackDepth_startDepthMap :: StartDepthMap
    }
 
-type StackDepth = RWS BlockSeen () StackDepthState
+type StackDepthM = RWS BlockSeen () StackDepthState
 
 -- This function plays the same role as stackdepth and stackdepth_walk from
 -- CPython compile.c
@@ -330,7 +327,7 @@ maxStackDepth blockID blockMap =
       , stackDepth_startDepthMap = Map.empty
       }
    -- have to be careful that depth does not underflow back to maxbound :: Word32
-   maxStackDepthM :: Word32 -> BlockID -> StackDepth ()
+   maxStackDepthM :: Word32 -> BlockID -> StackDepthM ()
    maxStackDepthM depth blockID = do
       seen <- ask
       if blockID `Set.member` seen
