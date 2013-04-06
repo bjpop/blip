@@ -18,34 +18,154 @@
 
 module StackDepth (maxStackDepth) where
  
+import Debug.Trace (trace)
+import Types (AnnotatedCode (..))
 import Monad (Compile (..))
-import Utils (isJump)
-import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..))
+import Utils (isJump, isJumpBytecode, isRelativeJump)
+import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Data.Word (Word32, Word16)
 import Control.Monad.RWS.Strict (RWS (..), runRWS, ask, local, gets, modify, when, unless)
 import qualified Data.Map as Map
 import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
 
+type InstructionSeen = Set.Set Word16
+
+{-
 maxStackDepth :: Compile Word32
 maxStackDepth = return 100
+-}
 
-type BytecodeMap = Map.Map Word16 [Bytecode]
+-- Mapping from byte address (jump target) to sequence of bytecode
+-- from that address onwards.
+type BytecodeMap = Map.Map Word16 [AnnotatedCode]
 
-type InstructionSeen = Set.Set Word16
+type StackDepthCache = Map.Map Word16 Word32
+
+makeBytecodeMap :: [AnnotatedCode] -> BytecodeMap
+makeBytecodeMap = makeBytecodeMapAcc Map.empty
+   where
+   makeBytecodeMapAcc :: BytecodeMap -> [AnnotatedCode] -> BytecodeMap
+   makeBytecodeMapAcc map [] = map
+   makeBytecodeMapAcc map code@(instruction@(AnnotatedCode {..}) : rest)
+      | isLabelled instruction = do
+          let newMap = Map.insert annotatedCode_index code map
+          makeBytecodeMapAcc newMap rest
+      | otherwise = makeBytecodeMapAcc map rest
 
 data StackDepthState =
    StackDepthState
    { stackDepth_bytecodeMap :: BytecodeMap
    , stackDepth_maxDepth :: !Word32
+   , stackDepth_cache :: StackDepthCache 
    }
+
+initStackDepthState :: BytecodeMap -> StackDepthState
+initStackDepthState bytecodeMap =
+   StackDepthState
+   { stackDepth_bytecodeMap = bytecodeMap
+   , stackDepth_maxDepth = 0 
+   , stackDepth_cache = Map.empty }
 
 type StackDepth = RWS InstructionSeen () StackDepthState
 
-{-
 maxStackDepth :: [AnnotatedCode] -> Word32
 maxStackDepth code = 
--}
+   stackDepth_maxDepth finalState
+   where
+   (_, finalState, _) = runRWS (maxStackDepthM 0 code)
+                               Set.empty $ initStackDepthState $
+                               makeBytecodeMap code
+
+isLabelled :: AnnotatedCode -> Bool
+isLabelled (AnnotatedCode {..}) = not $ null annotatedCode_labels
+
+isLoopBack :: Word16 -> StackDepth Bool
+isLoopBack index = do
+   seen <- ask
+   return (index `Set.member` seen)
+
+-- record that we've visited this jump target at this depth
+-- in case we visit it again in any path. There is no point
+-- traversing further if the previous visit was at an equal
+-- or greater depth.
+
+visitedDeeper :: Word16 -> Word32 -> StackDepth Bool
+visitedDeeper index newDepth = do
+   stackDepthCache <- gets stackDepth_cache 
+   case Map.lookup index stackDepthCache of
+       -- not been here before at any depth
+       Nothing -> return False
+       Just oldDepth -> return (oldDepth >= newDepth)
+
+recordDepth :: Word16 -> Word32 -> StackDepth ()
+recordDepth index depth = do
+   stackDepthCache <- gets stackDepth_cache
+   let newCache = Map.insert index depth stackDepthCache
+   modify $ \s -> s { stackDepth_cache = newCache }
+
+maxStackDepthM :: Word32 -> [AnnotatedCode] -> StackDepth ()
+maxStackDepthM _depth [] = return ()
+maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
+   if isLabelled instruction
+      then do
+         seenBeforeOnPath <- isLoopBack annotatedCode_index 
+         seenDeeper <- visitedDeeper annotatedCode_index depth
+         -- trace (show annotatedCode_index) (return ())
+         if seenBeforeOnPath || seenDeeper
+            then return ()
+            else local (Set.insert annotatedCode_index) $ do
+                    recordDepth annotatedCode_index depth
+                    maxStackDepthFurtherM depth code
+      else
+         maxStackDepthFurtherM depth code
+   where
+   maxStackDepthFurtherM :: Word32 -> [AnnotatedCode] -> StackDepth ()
+   maxStackDepthFurtherM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
+       let newDepth = depth + codeStackEffect annotatedCode_bytecode
+       updateMaxDepth newDepth
+       when (isJumpBytecode annotatedCode_bytecode) $
+           maxStackDepthJumpM newDepth instruction
+       maxStackDepthM newDepth rest
+
+maxStackDepthJumpM :: Word32 -> AnnotatedCode -> StackDepth ()
+maxStackDepthJumpM depth instruction@(AnnotatedCode {..}) = do
+   code <- getJumpToCode instruction
+   maxStackDepthM depth code 
+
+getJumpToCode :: AnnotatedCode -> StackDepth [AnnotatedCode]
+getJumpToCode instruction@(AnnotatedCode {..}) = do
+   let jumpTarget = 
+          if isRelativeJump $ opcode annotatedCode_bytecode 
+             then relativeTarget instruction
+             else absoluteTarget instruction
+   bytecodeMap <- gets stackDepth_bytecodeMap
+   case Map.lookup jumpTarget bytecodeMap of
+       Nothing -> error $ "Jump to uknown target: " ++ show instruction
+       Just code -> return code
+
+relativeTarget :: AnnotatedCode -> Word16
+relativeTarget instruction@(AnnotatedCode {..}) =
+   target + (annotatedCode_index + instructionSize)
+   where
+   instructionSize = fromIntegral $ bytecodeSize annotatedCode_bytecode
+   target = getJumpTarget instruction
+
+absoluteTarget :: AnnotatedCode -> Word16
+absoluteTarget instruction@(AnnotatedCode {..}) 
+   = getJumpTarget instruction
+
+getJumpTarget :: AnnotatedCode -> Word16
+getJumpTarget instruction@(AnnotatedCode {..}) =
+   case args annotatedCode_bytecode of
+      Nothing -> error $ "Jump instruction without argument: " ++ show instruction
+      Just (Arg16 label) -> label
+
+updateMaxDepth :: Word32 -> StackDepth ()
+updateMaxDepth depth = do
+   currentMaxDepth <- gets stackDepth_maxDepth
+   when (depth > currentMaxDepth) $ 
+      modify $ \s -> s { stackDepth_maxDepth = depth }
 
 -- Compute the effect of each opcode on the depth of the stack.
 -- This is used to compute an upper bound on the depth of the stack

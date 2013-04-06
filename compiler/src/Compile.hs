@@ -721,10 +721,10 @@ compileComparison (BinaryOp {..}) = do
  
 makeObject :: Compile PyObject
 makeObject = do
-   stackDepth <- maxStackDepth 
+   annotatedCode <- getBlockState state_instructions
+   let stackDepth = maxStackDepth annotatedCode
    names <- getBlockState state_names
    constants <- getBlockState state_constants
-   annotatedCode <- getBlockState state_instructions
    freeVars <- getBlockState state_freeVars
    cellVars <- getBlockState state_cellVars
    localVars <- getBlockState state_locals
