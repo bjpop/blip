@@ -45,7 +45,7 @@ import Language.Python.Common.AST as AST
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
-   , Comprehension (..), SliceSpan, Slice (..) )
+   , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..) )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -160,6 +160,14 @@ instance Compilable StatementSpan where
    compile (Assign {..}) = do
       compile assign_expr
       compileAssignments assign_to
+   compile (AugmentedAssign {..}) =
+      case aug_assign_to of
+         Var {..} -> do
+            varInfo <- lookupVar $ ident_string var_ident
+            emitReadVar varInfo
+            compile aug_assign_expr
+            compile aug_assign_op
+            emitWriteVar varInfo
    compile (Return { return_expr = Nothing }) = returnNone
    compile (Return { return_expr = Just expr }) =  
       compile expr >> emitCodeNoArg RETURN_VALUE
@@ -269,6 +277,26 @@ instance Compilable StatementSpan where
          Class {} -> compileClass decorated_def decorated_decorators
          other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
+
+assignOpCode :: AssignOpSpan -> Opcode
+assignOpCode assign = 
+   case assign of
+      PlusAssign {} -> INPLACE_ADD
+      MinusAssign {} -> INPLACE_SUBTRACT
+      MultAssign {} -> INPLACE_MULTIPLY
+      DivAssign {} -> INPLACE_TRUE_DIVIDE
+      ModAssign {} -> INPLACE_MODULO
+      PowAssign {} -> INPLACE_POWER
+      BinAndAssign {} -> INPLACE_AND
+      BinOrAssign {} -> INPLACE_OR
+      BinXorAssign {} -> INPLACE_XOR
+      LeftShiftAssign {} -> INPLACE_LSHIFT
+      RightShiftAssign {} -> INPLACE_RSHIFT
+      FloorDivAssign {} -> INPLACE_FLOOR_DIVIDE
+
+instance Compilable AssignOpSpan where
+   type CompileResult AssignOpSpan = ()
+   compile = emitCodeNoArg . assignOpCode
 
 instance Compilable DecoratorSpan where
    type CompileResult DecoratorSpan = ()
