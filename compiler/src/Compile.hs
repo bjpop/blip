@@ -44,7 +44,8 @@ import Language.Python.Common.AST as AST
    , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
-   , FromItemSpan, DecoratorSpan, Decorator (..) )
+   , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
+   , Comprehension (..), SliceSpan, Slice (..) )
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -512,6 +513,8 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
+   compile (ListComp {..}) =
+      compile list_comprehension
    compile expr@(AST.Set {..}) = do
       mapM compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
@@ -533,6 +536,10 @@ instance Compilable ExprSpan where
    compile (Subscript {..}) = do
       compile subscriptee
       compile subscript_expr
+      emitCodeNoArg BINARY_SUBSCR
+   compile (SlicedExpr {..}) = do
+      compile slicee
+      compileSlices slices
       emitCodeNoArg BINARY_SUBSCR
    -- XXX need to support operator chaining.
    compile exp@(BinaryOp {..})
@@ -557,6 +564,28 @@ instance Compilable ExprSpan where
          makeObject
       compileClosure "<lambda>" funBodyObj
    compile other = error $ "Unsupported expr:\n" ++ prettyText other
+
+instance Show e => Compilable (ComprehensionSpan e) where
+   type CompileResult (ComprehensionSpan e) = ()
+   compile s = error $ "compile comprehension incomplete " ++ show s
+
+-- XXX need to handle extended slices, slice expressions and ellipsis
+compileSlices :: [SliceSpan] -> Compile ()
+compileSlices [SliceProper {..}] = do
+   case slice_lower of
+      Nothing -> compileConstantEmit Blip.None
+      Just expr -> compile expr
+   case slice_upper of
+      Nothing -> compileConstantEmit Blip.None
+      Just expr -> compile expr
+   case slice_stride of
+      Nothing -> emitCodeArg BUILD_SLICE 2
+      -- Not sure about this, maybe it is None
+      Just Nothing -> emitCodeArg BUILD_SLICE 2
+      Just (Just expr) -> do
+         compile expr
+         emitCodeArg BUILD_SLICE 3
+compileSlices other = error $ "unsupported slice: " ++ show other
 
 -- XXX CPython uses a "qualified" name for the code object. For instance
 -- nested functions look like "f.<locals>.g", whereas we currently use
