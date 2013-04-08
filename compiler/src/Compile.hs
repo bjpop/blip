@@ -498,11 +498,16 @@ constantToPyObject (AST.Strings {..}) =
    Blip.Unicode { unicode = concat $ map stripQuotes strings_strings }
    where
    -- The strings in the AST retain their original quote marks which
-   -- need to be removed.
+   -- need to be removed, we have to remove single or triple quotes.
+   -- We assume the parser has correctly matched the quotes.
+   -- XXX this is ugly, perhaps we should fix the parser to not
+   -- include the quotes.
    stripQuotes :: String -> String
-   stripQuotes str
-      | length str >= 2 = tail $ init str
-      | otherwise = str
+   stripQuotes ('\'':'\'':'\'':rest) = take (length rest - 3) rest
+   stripQuotes ('"':'"':'"':rest) = take (length rest - 3) rest
+   stripQuotes ('\'':rest) = init rest
+   stripQuotes ('"':rest) = init rest
+   stripQuotes other = error $ "bad literal string: " ++ other
 
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
