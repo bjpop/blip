@@ -1,1 +1,3 @@
 print("")
+print('')
+print("""""")
