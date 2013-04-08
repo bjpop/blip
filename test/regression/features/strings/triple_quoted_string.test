@@ -1,0 +1,7 @@
+blip triple_quoted_string.py && python3.3 triple_quoted_string.pyc
+<<<
+>>>
+Hello
+World
+>>>2
+>>>=0
