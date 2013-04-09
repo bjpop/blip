@@ -1,0 +1,8 @@
+blip trivial_function.py && python3.3 trivial_function.pyc
+<<<
+>>>
+<class 'function'>
+f
+None
+>>>2
+>>>=0
