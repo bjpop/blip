@@ -490,6 +490,7 @@ constantToPyObject (AST.Imaginary {..}) =
 constantToPyObject (AST.Bool { bool_value = True }) = Blip.TrueObj
 constantToPyObject (AST.Bool { bool_value = False }) = Blip.FalseObj
 constantToPyObject (AST.None {}) = Blip.None
+constantToPyObject (AST.Ellipsis {}) = Blip.Ellipsis
 -- assumes all the tuple elements are constant
 -- XXX what about tuples containig lists?
 constantToPyObject (AST.Tuple {..}) =
@@ -525,6 +526,8 @@ instance Compilable ExprSpan where
    compile expr@(AST.Bool {}) =
       compileConstantEmit $ constantToPyObject expr
    compile expr@(AST.None {}) =
+      compileConstantEmit $ constantToPyObject expr
+   compile expr@(AST.Ellipsis {}) =
       compileConstantEmit $ constantToPyObject expr
    compile (AST.Paren {..}) = compile paren_expr
    compile (AST.CondExpr {..}) = do

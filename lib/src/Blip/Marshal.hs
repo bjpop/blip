@@ -73,6 +73,7 @@ data PyObject
    | Int { int_value :: Word32 }
    | Float { float_value :: Double }
    | None
+   | Ellipsis
    | Unicode { unicode :: String } -- should be decoded into a String
    | TrueObj
    | FalseObj
@@ -85,6 +86,7 @@ instance Pretty PyObject where
    pretty (Int {..}) = pretty int_value
    pretty (Float {..}) = pretty float_value
    pretty None = text "None"
+   pretty Ellipsis = text "..."
    pretty TrueObj = text "True"
    pretty FalseObj = text "False"
    pretty (Unicode {..}) = doubleQuotes $ text unicode
@@ -151,12 +153,13 @@ readObject = do
        TUPLE -> readTupleObject
        INT -> readIntObject
        NONE -> return None 
+       ELLIPSIS -> return Ellipsis
        TRUE -> return TrueObj
        FALSE -> return FalseObj
        UNICODE -> readUnicodeObject
        BINARY_FLOAT -> readFloatObject
        BINARY_COMPLEX -> readComplexObject
-       _other -> error ("readObject: unsupported object type" ++ show object_type)
+       _other -> error ("readObject: unsupported object type: " ++ show object_type)
 
 writeObject :: PyObject -> PutData
 writeObject object =
@@ -166,6 +169,7 @@ writeObject object =
       Tuple {..} -> writeTupleObject object
       Int {..} -> writeIntObject object
       None -> putU8 $ encodeObjectType NONE
+      Ellipsis -> putU8 $ encodeObjectType ELLIPSIS
       Unicode {..} -> writeUnicodeObject object
       TrueObj -> putU8 $ encodeObjectType TRUE
       FalseObj -> putU8 $ encodeObjectType FALSE
