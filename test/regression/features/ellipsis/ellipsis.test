@@ -1,0 +1,7 @@
+blip ellipsis.py && python3.3 ellipsis.pyc
+<<<
+>>>
+Ellipsis
+<class 'ellipsis'>
+>>>2
+>>>=0
