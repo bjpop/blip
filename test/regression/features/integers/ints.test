@@ -1,0 +1,11 @@
+blip ints.py && python3.3 ints.pyc
+<<<
+>>>
+0
+0
+1
+-1
+<class 'int'>
+1
+>>>2
+>>>=0
