@@ -45,7 +45,8 @@ import Language.Python.Common.AST as AST
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
-   , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..) )
+   , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
+   , ParameterSpan, Parameter (..))
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
 import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
@@ -57,10 +58,11 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
 import Data.List (sort, intersperse)
-import Control.Monad (unless, forM_, when, replicateM_)
+import Control.Monad (unless, forM_, when, replicateM_, foldM)
 import Control.Exception (try)
 import System.IO.Error (IOError, userError, ioError)
 import Control.Monad.Trans (liftIO)
+import Data.Bits ((.|.), shiftL)
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile
@@ -333,9 +335,23 @@ compileFun (Fun {..}) decorators = do
       funBodyObj <- nestedBlock stmt_annot $ do
          compileFunDocString fun_body
          compile $ Body fun_body
-      compileClosure funName funBodyObj
+      numDefaults <- compileDefaultParams fun_args
+      compileClosure funName funBodyObj numDefaults
    varInfo <- lookupVar funName
    emitWriteVar varInfo
+
+-- Compile default parameters and return how many there are
+compileDefaultParams :: [ParameterSpan] -> Compile Word16
+compileDefaultParams = foldM compileParam 0
+   where
+   compileParam :: Word16 -> ParameterSpan -> Compile Word16
+   compileParam count (Param {..}) = do
+      case param_default of
+         Nothing -> return count
+         Just expr -> do
+            compile expr
+            return $ count + 1
+   compileParam count _other = return count
 
 compileClass :: StatementSpan -> [DecoratorSpan] -> Compile ()
 compileClass (Class {..}) decorators = do
@@ -354,7 +370,7 @@ compileClass (Class {..}) decorators = do
          compileClassModuleDocString class_body
          compile $ Body class_body
       emitCodeNoArg LOAD_BUILD_CLASS
-      compileClosure className classBodyObj
+      compileClosure className classBodyObj 0
       compileConstantEmit $ Unicode className
       mapM compile class_args
       emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
@@ -567,8 +583,10 @@ instance Compilable ExprSpan where
    -- XXX should handle keyword arguments etc.
    compile (Call {..}) = do
       compile call_fun
-      mapM compile call_args
-      emitCodeArg CALL_FUNCTION $ fromIntegral $ length call_args
+      -- mapM compile call_args
+      (numPosArgs, numKeyWordArgs) <- compileCallArgs call_args
+      let opArg = numPosArgs .|. numKeyWordArgs `shiftL` 8
+      emitCodeArg CALL_FUNCTION opArg 
    compile (Subscript {..}) = do
       compile subscriptee
       compile subscript_expr
@@ -598,8 +616,22 @@ instance Compilable ExprSpan where
          emitCodeNoArg RETURN_VALUE
          assemble
          makeObject
-      compileClosure "<lambda>" funBodyObj
+      compileClosure "<lambda>" funBodyObj 0
    compile other = error $ "Unsupported expr:\n" ++ prettyText other
+
+compileCallArgs :: [ArgumentSpan] -> Compile (Word16, Word16)
+compileCallArgs = foldM compileArg (0, 0)
+   where
+   compileArg :: (Word16, Word16) -> ArgumentSpan -> Compile (Word16, Word16)
+   compileArg (posArgs, kwArgs) (ArgExpr {..}) = do
+      compile arg_expr
+      return (posArgs + 1, kwArgs)
+   compileArg (posArgs, kwArgs) (ArgKeyword {..}) = do
+      compileConstantEmit $ Unicode $ ident_string arg_keyword
+      compile arg_expr
+      return (posArgs, kwArgs + 1)
+   compileArg _count other =
+      error $ "unsupported argument: " ++ prettyText other
 
 instance Show e => Compilable (ComprehensionSpan e) where
    type CompileResult (ComprehensionSpan e) = ()
@@ -630,8 +662,8 @@ compileSlices other = error $ "unsupported slice: " ++ show other
 -- The free variables in a code object will either be cell variables
 -- or free variables in the enclosing object. If there are no free
 -- variables then we can avoid building the closure, and just make the function.
-compileClosure :: String -> PyObject -> Compile ()
-compileClosure name obj = do
+compileClosure :: String -> PyObject -> Word16 -> Compile ()
+compileClosure name obj numDefaults = do
    -- get the list of free variables from the code object
    let Blip.Tuple freeVarStringObjs = freevars obj
        freeVarIdentifiers = map unicode freeVarStringObjs
@@ -640,8 +672,7 @@ compileClosure name obj = do
       then do
          compileConstantEmit obj 
          compileConstantEmit $ Unicode name
-         emitCodeArg MAKE_FUNCTION 0 -- XXX need to figure out this arg
-                                     -- appears to be related to keyword args, and defaults
+         emitCodeArg MAKE_FUNCTION numDefaults  
       else do
          forM_ freeVarIdentifiers $ \var -> do
             maybeVarInfo <- lookupClosureVar var
@@ -655,7 +686,7 @@ compileClosure name obj = do
          emitCodeArg BUILD_TUPLE $ fromIntegral numFreeVars
          compileConstantEmit obj 
          compileConstantEmit $ Unicode name
-         emitCodeArg MAKE_CLOSURE 0 -- XXX fix the argument to MAKE_CLOSURE 
+         emitCodeArg MAKE_CLOSURE numDefaults
 
 instance Compilable ArgumentSpan where
    type CompileResult ArgumentSpan = ()
