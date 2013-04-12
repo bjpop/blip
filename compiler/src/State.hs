@@ -10,7 +10,7 @@
 -- Portability : ghc
 --
 -- Management of state for the compiler. There is global state which
--- persist through the whole compilation (such as command line flags), and
+-- persists through the whole compilation (such as command line flags), and
 -- there is block state, which is local for the compilation of a block
 -- of code.
 --
@@ -19,7 +19,7 @@ module State
    ( setBlockState, getBlockState, initBlockState, initState, modifyBlockState
    , emitCode, emitCodeNoArg, emitCodeArg, compileConstant
    , getFileName, newLabel, compileConstantEmit, labelNextInstruction
-   , getObjectName, setObjectName, getLastInstruction, getLabelMap, getGlobals
+   , getObjectName, setObjectName, getLabelMap, getGlobals
    , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
    , lookupNestedScope, indexedVarSetKeys, lookupVar, lookupGlobalVar
    , emitReadVar, emitWriteVar, lookupClosureVar )
@@ -116,16 +116,6 @@ initState globals definitionScope nestedScope config pyFilename = CompileState
    , state_filename = pyFilename
    , state_globals = globals
    }
-
--- get the most recently added instruction to the state
-getLastInstruction :: Compile (Maybe Bytecode)
-getLastInstruction = do
-   instructions <- getBlockState state_instructions
-   if null instructions
-      then return Nothing
-      -- instructions are in reverse order, so the most recent
-      -- one is at the front of the list
-      else return $ Just $ annotatedCode_bytecode $ head instructions
 
 ifDump :: Dumpable -> Compile () -> Compile ()
 ifDump dumpable action = do

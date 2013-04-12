@@ -26,6 +26,8 @@ import Data.List as List (foldl')
 
 assemble :: Compile ()
 assemble = do
+   -- The bytecode instructions within the compiler state are
+   -- in a list in reverse order.
    annotatedCode <- reverse `fmap` getBlockState state_instructions
    labelMap <- getLabelMap
    let finalAnnotatedCode = applyLabelMap labelMap annotatedCode
