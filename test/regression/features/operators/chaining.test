@@ -3,5 +3,11 @@ blip chaining.py && python3.3 chaining.pyc
 >>>
 True
 False
+True
+False
+False
+True
+False
+True
 >>>2
 >>>=0
