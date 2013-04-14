@@ -15,7 +15,7 @@
 module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
-   , mkIdent, mkAssign, mkList, mkMethodCall, mkStmtExpr )
+   , mkIdent, mkAssign, mkList, mkMethodCall, mkStmtExpr, mkSet )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -111,6 +111,9 @@ mkAssign ident expr =
 
 mkList :: [ExprSpan] -> ExprSpan
 mkList exprs = List { list_exprs = exprs, expr_annot = SpanEmpty }
+
+mkSet :: [ExprSpan] -> ExprSpan
+mkSet exprs = Set { set_exprs = exprs, expr_annot = SpanEmpty }
 
 mkMethodCall :: ExprSpan -> String -> ExprSpan -> ExprSpan
 mkMethodCall object methodName argument =

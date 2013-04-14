@@ -15,7 +15,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Desugar (desugarComprehension) where
+module Desugar (desugarComprehension, CompUpdater) where
 
 import Prelude hiding (mapM)
 import Utils (mkVar, mkReturn, mkIdent)
@@ -27,10 +27,10 @@ import Language.Python.Common.AST as AST
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Language.Python.Common (prettyText)
 
-type UpdateMaker = ExprSpan -> StatementSpan
+type CompUpdater = ExprSpan -> StatementSpan
 
 -- XXX need to generalise to dict comprehenions
-desugarComprehension :: StatementSpan -> UpdateMaker -> ComprehensionSpan ExprSpan -> [StatementSpan]
+desugarComprehension :: StatementSpan -> CompUpdater -> ComprehensionSpan ExprSpan -> [StatementSpan]
 desugarComprehension initStmt updater comp@(Comprehension {..}) =
    [ initStmt, forLoop, returnStmt ]  
    where

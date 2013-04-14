@@ -398,7 +398,8 @@ instance VarUsage ExprSpan where
    varUsage (Dictionary {..}) = varUsage dict_mappings
    varUsage (DictComp {..}) = error "dict comp not supported in varUsage"
    varUsage (Set {..}) = varUsage set_exprs
-   varUsage (SetComp {..}) = error "set comp not supported in varUsage"
+   varUsage (SetComp {..}) =
+      mempty { usage_definitions = [DefComprehension set_comprehension] } 
    varUsage (Starred {..}) = varUsage starred_expr
    varUsage (Paren {..}) = varUsage paren_expr
    varUsage _other = mempty

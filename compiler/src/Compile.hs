@@ -45,10 +45,10 @@
 module Compile (compileFile) where
 
 import Prelude hiding (mapM)
-import Desugar (desugarComprehension)
+import Desugar (desugarComprehension, CompUpdater)
 import Utils 
    ( isPureExpr, isPyObjectExpr, mkAssign, mkIdent, mkList
-   , mkVar, mkMethodCall, mkStmtExpr )
+   , mkVar, mkMethodCall, mkStmtExpr, mkSet )
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -393,19 +393,17 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
-   -- desugar the list comprehension into a zero-arity function (body) and then call it
    compile (ListComp {..}) = do
       let initStmt = mkAssign (mkIdent "$result") (mkList [])
           updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
-          desugaredComp = desugarComprehension initStmt updater list_comprehension
-      funObj <- nestedBlock (comprehension_annot list_comprehension) $ compile $ Body desugaredComp
-      compileClosure "<listcomp>" funObj 0
-      emitCodeArg CALL_FUNCTION 0
-      -- liftIO $ putStrLn $ prettyText desugaredComp
-      -- compile desugaredComp
+      compileComprehension "<listcomp>" initStmt updater list_comprehension
    compile expr@(AST.Set {..}) = do
       mapM compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
+   compile (SetComp {..}) = do
+      let initStmt = mkAssign (mkIdent "$result") (mkSet [])
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "add" expr
+      compileComprehension "<setcomp>" initStmt updater set_comprehension
    compile expr@(Dictionary {..}) = do
       emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
       forM_ dict_mappings $ \(key, value) -> do
@@ -476,10 +474,6 @@ instance Compilable DecoratorSpan where
             emitCodeArg LOAD_ATTR index
       compileDottedName [] =
          error $ "decorator with no name: " ++ prettyText dec
-
-instance Show e => Compilable (ComprehensionSpan e) where
-   type CompileResult (ComprehensionSpan e) = ()
-   compile s = error $ "compile comprehension incomplete " ++ show s
 
 instance Compilable ArgumentSpan where
    type CompileResult ArgumentSpan = ()
@@ -739,6 +733,15 @@ compileGuard restLabel (expr, stmts) = do
    compile stmts
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
+
+-- Desugar the comprehension into a zero-arity function (body) with
+-- a (possibly nested) for loop, then call the function.
+compileComprehension :: Identifier -> StatementSpan -> CompUpdater -> ComprehensionSpan ExprSpan -> Compile ()
+compileComprehension name initStmt updater comprehension = do
+   let desugaredComp = desugarComprehension initStmt updater comprehension 
+   funObj <- nestedBlock (comprehension_annot comprehension) $ compile $ Body desugaredComp
+   compileClosure name funObj 0
+   emitCodeArg CALL_FUNCTION 0
 
 -- Convert a constant expression into the equivalent object. This
 -- only works for expressions which have a counterpart in the object

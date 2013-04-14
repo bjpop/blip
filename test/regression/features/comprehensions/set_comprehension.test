@@ -1,0 +1,6 @@
+blip set_comprehension.py && python3.3 set_comprehension.pyc
+<<<
+>>>
+{8, 6, 7}
+>>>2
+>>>=0
