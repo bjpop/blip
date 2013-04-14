@@ -82,7 +82,9 @@ import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
    , Argument (..), ArgumentSpan, RaiseExpr (..), RaiseExprSpan
    , Slice (..), SliceSpan, ModuleSpan, Module (..), ParameterSpan
-   , Parameter (..), Op (..) )
+   , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
+   , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
+   , CompIfSpan )
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
 import Control.Monad.RWS.Strict (RWS (..), local, modify, ask, runRWS)
@@ -140,7 +142,10 @@ prettyScope (globals, nestedScope) =
       (nest 5 $ pretty nestedScope)
 
 -- class, function def or lambda
-data Definition = DefStmt StatementSpan | DefLambda ExprSpan
+data Definition
+   = DefStmt StatementSpan -- class, or def
+   | DefLambda ExprSpan -- lambda
+   | DefComprehension (ComprehensionSpan ExprSpan) -- comprehension, XXX fixme for dicts
 
 data Usage =
    Usage
@@ -149,7 +154,7 @@ data Usage =
    , usage_nonlocals :: !VarSet    -- variables declared nonlocal in this scope
    , usage_globals :: !VarSet      -- variables declared global in this scope
    , usage_referenced :: !VarSet   -- variables referred to (read from) in this scope
-   , usage_definitions :: ![Definition] -- locally defined lambdas, classes, functions
+   , usage_definitions :: ![Definition] -- locally defined lambdas, classes, functions, comprehensions
    }
 
 emptyNestedScope :: NestedScope
@@ -173,6 +178,15 @@ nestedScope nestedScope (DefStmt (Fun {..})) = do
 nestedScope nestedScope (DefLambda (Lambda {..})) = do
    let usage = varUsage lambda_args `mappend` varUsage lambda_body
    functionNestedScope nestedScope usage expr_annot "<lambda>" 
+nestedScope nestedScope (DefComprehension (Comprehension {..})) = do
+   -- we introduce a new local variable called $result when compiling
+   -- comprehensions
+   let resultVarSet = Set.singleton "$result"
+       usage = mempty { usage_assigned = resultVarSet
+                      , usage_referenced = resultVarSet } `mappend`
+               varUsage comprehension_expr `mappend`
+               varUsage comprehension_for
+   functionNestedScope nestedScope usage comprehension_annot "<comprehension>" 
 {-
    Classes can have freeVars, but they don't have cellVars.
 
@@ -378,7 +392,8 @@ instance VarUsage ExprSpan where
    varUsage (Tuple {..}) = varUsage tuple_exprs
    varUsage (Yield {..}) = varUsage yield_expr 
    varUsage (Generator {..}) = error "generator not supported in varUsage"
-   varUsage (ListComp {..}) = error "list comp not supported in varUsage"
+   varUsage (ListComp {..}) =
+      mempty { usage_definitions = [DefComprehension list_comprehension] }
    varUsage (List {..}) = varUsage list_exprs
    varUsage (Dictionary {..}) = varUsage dict_mappings
    varUsage (DictComp {..}) = error "dict comp not supported in varUsage"
@@ -414,6 +429,26 @@ instance VarUsage (ParameterSpan) where
       mempty { usage_params = [fromIdentString param_name] } `mappend`
       varUsage param_py_annotation
    varUsage _other = mempty 
+
+instance VarUsage a => VarUsage (ComprehensionSpan a) where
+   varUsage (Comprehension {..}) = 
+      varUsage comprehension_expr `mappend`
+      varUsage comprehension_for
+
+instance VarUsage CompForSpan where
+   varUsage (CompFor {..}) = 
+      mempty { usage_assigned = assignTargets comp_for_exprs } `mappend` 
+      varUsage comp_in_expr `mappend`
+      varUsage comp_for_iter
+
+instance VarUsage CompIterSpan where
+   varUsage (IterFor {..}) = varUsage comp_iter_for
+   varUsage (IterIf {..}) = varUsage comp_iter_if
+
+instance VarUsage CompIfSpan where
+   varUsage (CompIf {..}) = 
+      varUsage comp_if `mappend`
+      varUsage comp_if_iter
 
 -- Collect all the variables which are assigned to in a list of expressions (patterns).
 -- XXX Incomplete

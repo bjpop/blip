@@ -393,13 +393,16 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
+   -- desugar the list comprehension into a zero-arity function (body) and then call it
    compile (ListComp {..}) = do
       let initStmt = mkAssign (mkIdent "$result") (mkList [])
-          -- result.append(expr)
           updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
           desugaredComp = desugarComprehension initStmt updater list_comprehension
-      liftIO $ putStrLn $ prettyText desugaredComp
-      compile desugaredComp
+      funObj <- nestedBlock (comprehension_annot list_comprehension) $ compile $ Body desugaredComp
+      compileClosure "<listcomp>" funObj 0
+      emitCodeArg CALL_FUNCTION 0
+      -- liftIO $ putStrLn $ prettyText desugaredComp
+      -- compile desugaredComp
    compile expr@(AST.Set {..}) = do
       mapM compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs

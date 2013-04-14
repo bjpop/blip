@@ -30,17 +30,12 @@ import Language.Python.Common (prettyText)
 type UpdateMaker = ExprSpan -> StatementSpan
 
 -- XXX need to generalise to dict comprehenions
-desugarComprehension :: StatementSpan -> UpdateMaker -> ComprehensionSpan ExprSpan -> StatementSpan
+desugarComprehension :: StatementSpan -> UpdateMaker -> ComprehensionSpan ExprSpan -> [StatementSpan]
 desugarComprehension initStmt updater comp@(Comprehension {..}) =
-   Fun { fun_name = funName
-       , fun_args = []
-       , fun_result_annotation = Nothing
-       , fun_body = funBody
-       , stmt_annot = comprehension_annot }
+   [ initStmt, forLoop, returnStmt ]  
    where
    funName = mkIdent "$comprehension"
    resultName = mkIdent "$result"
-   funBody = [ initStmt, forLoop, returnStmt ]  
    returnStmt = mkReturn $ mkVar $ resultName
    updateStmt = updater comprehension_expr
    forLoop = desugarCompFor updateStmt comprehension_for
