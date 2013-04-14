@@ -51,7 +51,7 @@ newtype NestedScope
    = NestedScope (Map.Map ScopeIdentifier (String, DefinitionScope, NestedScope))
    deriving Show
 
-data Dumpable = DumpScope {- | something else -}
+data Dumpable = DumpScope | DumpAST
    deriving (Eq, Ord, Show)
 
 data AnnotatedCode

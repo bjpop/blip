@@ -158,8 +158,9 @@ instance Compilable a => Compilable [a] where
 
 instance Compilable ModuleSpan where
    type CompileResult ModuleSpan = PyObject
-   compile (Module stmts) = do
+   compile ast@(Module stmts) = do
       maybeDumpScope 
+      maybeDumpAST ast
       setObjectName "<module>"
       compileClassModuleDocString stmts
       compile $ Body stmts
@@ -893,12 +894,76 @@ enum cmp_op {PyCmp_LT=Py_LT, PyCmp_LE=Py_LE, PyCmp_EQ=Py_EQ, PyCmp_NE=Py_NE, PyC
              PyCmp_IN, PyCmp_NOT_IN, PyCmp_IS, PyCmp_IS_NOT, PyCmp_EXC_MATCH, PyCmp_BAD};
 -}
 
+{- Operator chaining:
+
+   The parser treats comparison operators as left associative.
+
+   So: w < x < y < z is parsed as
+
+   (((w < x) < y) < z)
+
+   We want to compile this to:
+
+         [w]
+         [x]
+         DUP_TOP   # make a copy of the result of x
+         ROT_THREE # put the copy of [x] to the bottom
+         <
+         JUMP_IF_FALSE_OR_POP cleanup
+         [y]
+         DUP_TOP   # make a copy of [y]
+         ROT_THREE # put the copy of [y] to the bottom
+         <
+         JUMP_IF_FALSE_OR_POP cleanup
+         [z]
+         <
+         JUMP_FORWARD end
+   cleanup:
+         ROT_TWO  # put the result of the last comparison on the bottom 
+                  # and put the duplicated [y] on the top
+         POP_TOP  # remove the duplicated [y] from the top
+   end:
+         # whatever code follows
+-}
+
 compileComparison :: ExprSpan -> Compile ()
-compileComparison (BinaryOp {..}) = do
-   compile left_op_arg
-   compile right_op_arg
-   emitCodeArg COMPARE_OP $ comparisonOpCode operator
+compileComparison expr@(BinaryOp {}) =
+   compileChain numOps chain
    where
+   chain :: [ChainItem]
+   chain = flattenComparisonChain [] expr
+   numOps :: Int
+   numOps = length chain `div` 2
+
+   compileChain :: Int -> [ChainItem] -> Compile ()
+   compileChain numOps (Comparator e1 : internal@(Operator op : Comparator e2 : rest)) = do
+      compile e1
+      if numOps == 1
+         then do
+            compile e2
+            emitCodeArg COMPARE_OP $ comparisonOpCode op
+         else do
+            cleanup <- newLabel
+            (lastOp, lastArg) <- compileChainInternal cleanup internal 
+            compile lastArg
+            emitCodeArg COMPARE_OP $ comparisonOpCode lastOp
+            end <- newLabel
+            emitCodeArg JUMP_FORWARD end
+            labelNextInstruction cleanup
+            emitCodeNoArg ROT_TWO
+            emitCodeNoArg POP_TOP
+            labelNextInstruction end
+   compileChainInternal :: Word16 -> [ChainItem] -> Compile (OpSpan, ExprSpan)
+   compileChainInternal _cleanup [Operator op, Comparator exp] = return (op, exp)
+   compileChainInternal cleanup (Operator op : Comparator e : rest) = do
+      compile e
+      emitCodeNoArg DUP_TOP
+      emitCodeNoArg ROT_THREE
+      emitCodeArg COMPARE_OP $ comparisonOpCode op
+      emitCodeArg JUMP_IF_FALSE_OR_POP cleanup
+      compileChainInternal cleanup rest
+   compileChainInternal _cleanup _other = error $ "bad comparison chain: " ++ prettyText expr 
+        
    comparisonOpCode :: OpSpan -> Word16
    comparisonOpCode (LessThan {}) = 0 
    comparisonOpCode (LessThanEquals {}) = 1
@@ -911,7 +976,16 @@ compileComparison (BinaryOp {..}) = do
    comparisonOpCode (Is {}) = 8
    comparisonOpCode (IsNot {}) = 9
    -- XXX we don't appear to have an exact match operator in the AST
-   comparisonOpCode other = error $ "Unexpected comparison operator:\n" ++ prettyText operator
+   comparisonOpCode operator = error $ "Unexpected comparison operator:\n" ++ prettyText operator
+
+data ChainItem = Comparator ExprSpan | Operator OpSpan
+
+flattenComparisonChain :: [ChainItem] -> ExprSpan -> [ChainItem] 
+flattenComparisonChain acc (BinaryOp {..}) = 
+   flattenComparisonChain newAcc left_op_arg
+   where
+   newAcc = [Operator operator, Comparator right_op_arg] ++ acc
+flattenComparisonChain acc other = [Comparator other] ++ acc
  
 -- Emit an instruction that returns the None contant.
 returnNone :: Compile ()
@@ -925,3 +999,10 @@ maybeDumpScope = do
       nestedScope <- getNestedScope
       liftIO $ putStrLn "Variable Scope:"
       liftIO $ putStrLn $ renderScope (globals, nestedScope)
+
+-- Print out the AST of the module if requested on the command line.
+maybeDumpAST :: ModuleSpan -> Compile ()
+maybeDumpAST ast = do
+   ifDump DumpAST $ do
+      liftIO $ putStrLn "Abstract Syntax Tree:"
+      liftIO $ putStrLn $ show ast

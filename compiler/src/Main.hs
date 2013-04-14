@@ -26,12 +26,12 @@ import Compile (compileFile)
 import Blip.Marshal (writePyc)
 import Blip.Pretty (prettyString)
 import ProgName (progName)
-import Data.Set as Set (Set, empty, singleton)
+import Data.Set as Set (Set, empty, singleton, union)
 import Types (Dumpable (..), CompileConfig (..))
 
 main :: IO ()
 main = do
-   let argDescriptions = [version, help, magicNumberArg, dumpScopeArg]
+   let argDescriptions = [version, help, magicNumberArg, dumpScopeArg, dumpASTArg]
    args <- parseArgsIO (ArgsTrailing "PYTHON_FILES") argDescriptions
    when (gotArg args Help) $ do
       putStrLn $ argsUsage args
@@ -113,6 +113,16 @@ dumpScopeArg =
    , argDesc = "Dump the variable scope."
    }
 
+dumpASTArg :: Arg ArgIndex
+dumpASTArg =
+   Arg
+   { argIndex = Dump DumpAST
+   , argAbbr = Nothing
+   , argName = Just "dumpAST"
+   , argData = Nothing
+   , argDesc = "Dump the abstract syntax tree."
+   }
+
 getInputFile :: Args ArgIndex -> Maybe FilePath
 getInputFile args = getArg args InputFile 
 
@@ -122,8 +132,12 @@ getMagicNumber args =
 
 getDumps :: Args ArgIndex -> Set.Set Dumpable 
 getDumps args
-   | gotArg args (Dump DumpScope) = Set.singleton DumpScope
-   | otherwise = Set.empty
+   = getDump DumpScope args `Set.union` getDump DumpAST args
+   where
+   getDump :: Dumpable -> Args ArgIndex -> Set.Set Dumpable
+   getDump dumpable args
+      | gotArg args (Dump dumpable) = Set.singleton dumpable
+      | otherwise = Set.empty
 
 initCompileConfig :: CompileConfig
 initCompileConfig =
