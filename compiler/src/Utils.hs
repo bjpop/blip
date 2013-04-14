@@ -14,12 +14,15 @@
 -----------------------------------------------------------------------------
 module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
-   , isPyObjectExpr, isUnconditionalJump, isConditionalJump )
+   , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
+   , mkIdent, mkAssign, mkList, mkMethodCall, mkStmtExpr )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
 import Language.Python.Common.AST as AST
-   (ExprSpan (..), Expr (..))
+   ( ExprSpan (..), Expr (..), Statement (..), StatementSpan, Ident (..)
+   , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
+import Language.Python.Common.SrcLocation (SrcSpan (..))
 
 -- True if an expression can be represented directly as a PyObject constant.
 isPyObjectExpr :: ExprSpan -> Bool
@@ -90,3 +93,47 @@ isUnconditionalJump _other = False
 
 isConditionalJump :: Opcode -> Bool
 isConditionalJump = not . isUnconditionalJump
+
+mkIdent :: String -> IdentSpan
+mkIdent str = Ident { ident_string = str, ident_annot = SpanEmpty }
+
+mkReturn :: ExprSpan -> StatementSpan
+mkReturn expr = Return { return_expr = Just expr, stmt_annot = SpanEmpty }
+
+mkVar :: IdentSpan -> ExprSpan
+mkVar ident = Var { var_ident = ident, expr_annot = SpanEmpty }
+
+mkAssign :: IdentSpan -> ExprSpan -> StatementSpan
+mkAssign ident expr =
+   Assign { assign_to = [mkVar ident]
+          , assign_expr = expr
+          , stmt_annot = SpanEmpty }
+
+mkList :: [ExprSpan] -> ExprSpan
+mkList exprs = List { list_exprs = exprs, expr_annot = SpanEmpty }
+
+mkMethodCall :: ExprSpan -> String -> ExprSpan -> ExprSpan
+mkMethodCall object methodName argument =
+   mkCall (mkAttributeLookup object methodName) [argument]
+
+mkAttributeLookup :: ExprSpan -> String -> ExprSpan
+mkAttributeLookup object methodName =
+   BinaryOp { operator = dot
+            , left_op_arg = object
+            , right_op_arg = mkVar (mkIdent methodName)
+            , expr_annot = SpanEmpty }
+
+dot :: OpSpan
+dot = Dot { op_annot = SpanEmpty }
+
+mkCall :: ExprSpan -> [ExprSpan] -> ExprSpan 
+mkCall fun args = 
+   Call { call_fun = fun
+        , call_args = map mkArgument args
+        , expr_annot = SpanEmpty }
+
+mkArgument :: ExprSpan -> ArgumentSpan
+mkArgument expr = ArgExpr { arg_expr = expr, arg_annot = SpanEmpty }
+
+mkStmtExpr :: ExprSpan -> StatementSpan
+mkStmtExpr expr = StmtExpr { stmt_expr = expr, stmt_annot = SpanEmpty }

@@ -45,7 +45,10 @@
 module Compile (compileFile) where
 
 import Prelude hiding (mapM)
-import Utils (isPureExpr, isPyObjectExpr)
+import Desugar (desugarComprehension)
+import Utils 
+   ( isPureExpr, isPyObjectExpr, mkAssign, mkIdent, mkList
+   , mkVar, mkMethodCall, mkStmtExpr )
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -390,8 +393,13 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
-   compile (ListComp {..}) =
-      compile list_comprehension
+   compile (ListComp {..}) = do
+      let initStmt = mkAssign (mkIdent "$result") (mkList [])
+          -- result.append(expr)
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
+          desugaredComp = desugarComprehension initStmt updater list_comprehension
+      liftIO $ putStrLn $ prettyText desugaredComp
+      compile desugaredComp
    compile expr@(AST.Set {..}) = do
       mapM compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
