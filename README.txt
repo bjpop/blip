@@ -25,11 +25,12 @@ which can be used for pretty printing the contents of .pyc files:
 Usage
 -----
 
-blip [options] [--] [PYTHON_FILES ...]
+usage: blip [options] [--] [PYTHON_FILES ...]
   [--version]               Show the version number of blip.
   [-h,--help]               Display a help message.
   [--magic <magic number>]  Magic number to include in pyc file header.
   [--dumpScope]             Dump the variable scope.
+  [--dumpAST]               Dump the abstract syntax tree.
 
 Each version of CPython uses a magic number in the .pyc file header.
 This is to prevent the wrong version of CPython from being used to
