@@ -15,7 +15,8 @@
 module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
-   , mkIdent, mkAssign, mkList, mkMethodCall, mkStmtExpr, mkSet )
+   , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet, mkDict
+   , mkSubscript )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -103,10 +104,13 @@ mkReturn expr = Return { return_expr = Just expr, stmt_annot = SpanEmpty }
 mkVar :: IdentSpan -> ExprSpan
 mkVar ident = Var { var_ident = ident, expr_annot = SpanEmpty }
 
-mkAssign :: IdentSpan -> ExprSpan -> StatementSpan
-mkAssign ident expr =
-   Assign { assign_to = [mkVar ident]
-          , assign_expr = expr
+mkAssignVar :: IdentSpan -> ExprSpan -> StatementSpan
+mkAssignVar ident expr = mkAssign (mkVar ident) expr
+
+mkAssign :: ExprSpan -> ExprSpan -> StatementSpan
+mkAssign lhs rhs =
+   Assign { assign_to = [lhs]
+          , assign_expr = rhs 
           , stmt_annot = SpanEmpty }
 
 mkList :: [ExprSpan] -> ExprSpan
@@ -114,6 +118,9 @@ mkList exprs = List { list_exprs = exprs, expr_annot = SpanEmpty }
 
 mkSet :: [ExprSpan] -> ExprSpan
 mkSet exprs = Set { set_exprs = exprs, expr_annot = SpanEmpty }
+
+mkDict :: [(ExprSpan, ExprSpan)] -> ExprSpan
+mkDict exprs = Dictionary { dict_mappings = exprs, expr_annot = SpanEmpty }
 
 mkMethodCall :: ExprSpan -> String -> ExprSpan -> ExprSpan
 mkMethodCall object methodName argument =
@@ -140,3 +147,7 @@ mkArgument expr = ArgExpr { arg_expr = expr, arg_annot = SpanEmpty }
 
 mkStmtExpr :: ExprSpan -> StatementSpan
 mkStmtExpr expr = StmtExpr { stmt_expr = expr, stmt_annot = SpanEmpty }
+
+mkSubscript :: ExprSpan -> ExprSpan -> ExprSpan
+mkSubscript object index =
+   Subscript { subscriptee = object, subscript_expr = index, expr_annot = SpanEmpty }

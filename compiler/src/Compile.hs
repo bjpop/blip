@@ -45,10 +45,11 @@
 module Compile (compileFile) where
 
 import Prelude hiding (mapM)
-import Desugar (desugarComprehension, CompUpdater)
+import Desugar (desugarComprehension)
 import Utils 
-   ( isPureExpr, isPyObjectExpr, mkAssign, mkIdent, mkList
-   , mkVar, mkMethodCall, mkStmtExpr, mkSet )
+   ( isPureExpr, isPyObjectExpr, mkAssignVar, mkIdent, mkList
+   , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
+   , mkSubscript )
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -393,23 +394,28 @@ instance Compilable ExprSpan where
    compile expr@(AST.List {..}) = do
       mapM compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
-   compile (ListComp {..}) = do
-      let initStmt = mkAssign (mkIdent "$result") (mkList [])
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
-      compileComprehension "<listcomp>" initStmt updater list_comprehension
    compile expr@(AST.Set {..}) = do
       mapM compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
-   compile (SetComp {..}) = do
-      let initStmt = mkAssign (mkIdent "$result") (mkSet [])
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "add" expr
-      compileComprehension "<setcomp>" initStmt updater set_comprehension
    compile expr@(Dictionary {..}) = do
       emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
       forM_ dict_mappings $ \(key, value) -> do
          compile value
          compile key
          emitCodeNoArg STORE_MAP
+   compile (ListComp {..}) = do
+      let initStmt = mkAssignVar (mkIdent "$result") (mkList [])
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
+      compileComprehension "<listcomp>" initStmt updater list_comprehension
+   compile (SetComp {..}) = do
+      let initStmt = mkAssignVar (mkIdent "$result") (mkSet [])
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "add" expr
+      compileComprehension "<setcomp>" initStmt updater set_comprehension
+   compile (DictComp {..}) = do
+      let initStmt = mkAssignVar (mkIdent "$result") (mkDict [])
+          updater = \(key, val) -> 
+             mkAssign (mkSubscript (mkVar $ mkIdent "$result") key) val
+      compileComprehension "<dictcomp>" initStmt updater dict_comprehension
    compile (Yield { yield_expr = Nothing }) =
       compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE
    compile (Yield { yield_expr = Just expr }) =
@@ -736,7 +742,7 @@ compileGuard restLabel (expr, stmts) = do
 
 -- Desugar the comprehension into a zero-arity function (body) with
 -- a (possibly nested) for loop, then call the function.
-compileComprehension :: Identifier -> StatementSpan -> CompUpdater -> ComprehensionSpan ExprSpan -> Compile ()
+compileComprehension :: Identifier -> StatementSpan -> (a -> StatementSpan) -> ComprehensionSpan a -> Compile ()
 compileComprehension name initStmt updater comprehension = do
    let desugaredComp = desugarComprehension initStmt updater comprehension 
    funObj <- nestedBlock (comprehension_annot comprehension) $ compile $ Body desugaredComp

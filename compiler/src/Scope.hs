@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards, PatternGuards  #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards, PatternGuards, ExistentialQuantification #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -145,7 +145,7 @@ prettyScope (globals, nestedScope) =
 data Definition
    = DefStmt StatementSpan -- class, or def
    | DefLambda ExprSpan -- lambda
-   | DefComprehension (ComprehensionSpan ExprSpan) -- comprehension, XXX fixme for dicts
+   | forall e . VarUsage e => DefComprehension (ComprehensionSpan e) -- comprehension
 
 data Usage =
    Usage
@@ -312,7 +312,7 @@ instance VarUsage t => VarUsage [t] where
    varUsage = mconcat . Prelude.map varUsage
 
 instance (VarUsage t1, VarUsage t2) => VarUsage (t1, t2) where
-   varUsage (x,y) = varUsage x `mappend` varUsage y
+   varUsage (x, y) = varUsage x `mappend` varUsage y
 
 instance VarUsage a => VarUsage (Maybe a) where
    varUsage Nothing = mempty
@@ -391,12 +391,16 @@ instance VarUsage ExprSpan where
    varUsage expr@(Lambda {..}) = mempty { usage_definitions = [DefLambda expr] }
    varUsage (Tuple {..}) = varUsage tuple_exprs
    varUsage (Yield {..}) = varUsage yield_expr 
-   varUsage (Generator {..}) = error "generator not supported in varUsage"
+   -- varUsage (Generator {..}) = error "generator not supported in varUsage"
+   varUsage (Generator {..}) =
+      mempty { usage_definitions = [DefComprehension gen_comprehension] }
    varUsage (ListComp {..}) =
       mempty { usage_definitions = [DefComprehension list_comprehension] }
    varUsage (List {..}) = varUsage list_exprs
    varUsage (Dictionary {..}) = varUsage dict_mappings
-   varUsage (DictComp {..}) = error "dict comp not supported in varUsage"
+   -- varUsage (DictComp {..}) = error "dict comp not supported in varUsage"
+   varUsage (DictComp {..}) = 
+      mempty { usage_definitions = [DefComprehension dict_comprehension] }
    varUsage (Set {..}) = varUsage set_exprs
    varUsage (SetComp {..}) =
       mempty { usage_definitions = [DefComprehension set_comprehension] } 
