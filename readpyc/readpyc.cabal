@@ -1,7 +1,7 @@
 Name:                readpyc
-Version:             0.1
+Version:             0.1.0
 Synopsis:            Read and pretty print Python bytecode (.pyc) files.
-Homepage:            
+Homepage:            https://github.com/bjpop/blip 
 License:             BSD3
 License-file:        ../LICENSE
 Author:              Bernie Pope
@@ -17,6 +17,6 @@ Executable readpyc {
    hs-source-dirs: src
    build-depends:
       base==4.*,
-      bliplib,
-      parseargs
+      bliplib==0.1.*,
+      parseargs==0.1.*
 }
