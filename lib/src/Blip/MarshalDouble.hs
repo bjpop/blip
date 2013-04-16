@@ -19,7 +19,7 @@ import Foreign.Storable (peek, peekByteOff, pokeByteOff)
 import Foreign.Marshal.Utils (with)
 import Foreign.Marshal.Alloc (alloca)
 import Data.Word (Word8)
-import Control.Monad (forM)
+import Control.Monad (forM, forM_)
 import System.IO.Unsafe (unsafePerformIO)
 
 doubleToBytes :: Double -> [Word8]
@@ -37,6 +37,6 @@ bytesToDouble = unsafePerformIO . bytesToDoubleIO
 bytesToDoubleIO :: [Word8] -> IO Double
 bytesToDoubleIO bs =
    alloca $ \ptr -> do
-      forM (zip [0..7] bs) $ \(index, byte) -> 
+      forM_ (zip [0..7] bs) $ \(index, byte) -> 
          pokeByteOff ptr index byte
       peek ptr

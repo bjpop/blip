@@ -20,21 +20,15 @@ module Desugar (desugarComprehension) where
 import Prelude hiding (mapM)
 import Utils (mkVar, mkReturn, mkIdent)
 import Language.Python.Common.AST as AST
-   ( StatementSpan (..), Statement (..)
-   , ExprSpan (..), Expr (..), Ident (..), IdentSpan
-   , SuiteSpan, Comprehension (..), ComprehensionSpan, CompFor (..)
-   , CompForSpan, CompIf (..), CompIfSpan, CompIter (..), CompIterSpan) 
+   ( StatementSpan, Statement (..), ExprSpan, Comprehension (..)
+   , ComprehensionSpan, CompFor (..), CompForSpan, CompIf (..), CompIfSpan
+   , CompIter (..), CompIterSpan) 
 import Language.Python.Common.SrcLocation (SrcSpan (..))
-import Language.Python.Common (prettyText)
 
--- type CompUpdater = ExprSpan -> StatementSpan
-
--- XXX need to generalise to dict comprehenions
 desugarComprehension :: StatementSpan -> (a -> StatementSpan) -> ComprehensionSpan a -> [StatementSpan]
-desugarComprehension initStmt updater comp@(Comprehension {..}) =
+desugarComprehension initStmt updater (Comprehension {..}) =
    [ initStmt, forLoop, returnStmt ]  
    where
-   funName = mkIdent "$comprehension"
    resultName = mkIdent "$result"
    returnStmt = mkReturn $ mkVar $ resultName
    updateStmt = updater comprehension_expr

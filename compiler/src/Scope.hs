@@ -72,11 +72,11 @@ module Scope (topScope, renderScope) where
 
 import Types
    ( Identifier, VarSet, DefinitionScope (..)
-   , NestedScope (..), ScopeIdentifier (..))
+   , NestedScope (..), ScopeIdentifier )
 import Data.Set as Set
-   ( Set, empty, singleton, fromList, union, unions, difference
+   ( empty, singleton, fromList, union, unions, difference
    , intersection, toList, size )
-import Data.Map as Map (Map, empty, insert, elems, toList)
+import Data.Map as Map (empty, insert, elems, toList)
 import Data.List (foldl')
 import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
@@ -87,17 +87,15 @@ import Language.Python.Common.AST as AST
    , CompIfSpan )
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
-import Control.Monad.RWS.Strict (RWS (..), local, modify, ask, runRWS)
+import Control.Monad.RWS.Strict (RWS, local, modify, ask, runRWS)
 import Text.PrettyPrint.HughesPJ as Pretty
    (Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty, render)
-import Blip.Pretty (Pretty (..), prettyString)
-import State (emptyDefinitionScope, emptyVarSet)
+import Blip.Pretty (Pretty (..))
+import State (emptyVarSet)
 
 type ScopeM = RWS EnclosingVars () GlobalVars 
 
 type GlobalVars = VarSet
-type LocalVars = VarSet
-type CellVars = VarSet
 type FreeVars = VarSet
 type EnclosingVars = VarSet
 
@@ -107,7 +105,7 @@ instance Pretty NestedScope where
       where
       identsScopes = Map.toList scope
       prettyLocalScope :: (ScopeIdentifier, (String, DefinitionScope, NestedScope)) -> Doc
-      prettyLocalScope (span, (identifier, defScope, nestedScope)) =
+      prettyLocalScope (_span, (identifier, defScope, nestedScope)) =
          text identifier <+> text "->" $$ 
          nest 5 (pretty defScope $$ pretty nestedScope)
 
@@ -236,6 +234,8 @@ nestedScope (NestedScope scope) (DefStmt (Class {..})) = do
                      (fromIdentString class_name, thisDefinitionScope, thisNestedScope)
                      scope
    return $ NestedScope newScope
+
+nestedScope _nestedScope _def = error $ "nestedScope called on unexpected definition"
 
 functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> String -> ScopeM NestedScope
 functionNestedScope (NestedScope scope) (Usage {..}) scopeIdentifier name = do
@@ -367,6 +367,9 @@ instance VarUsage StatementSpan where
 
 instance VarUsage RaiseExprSpan where
    varUsage (RaiseV3 maybeExpr) = varUsage maybeExpr
+   -- the parser should never generate the following, but we need
+   -- code to make non-exhaustive pattern warnings go away.
+   varUsage _other = error $ "varUsage on Python version 2 style raise statement"
 
 instance VarUsage ExprSpan where
    varUsage (Var {..}) =

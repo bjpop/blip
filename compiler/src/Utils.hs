@@ -21,7 +21,7 @@ module Utils
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
 import Language.Python.Common.AST as AST
-   ( ExprSpan (..), Expr (..), Statement (..), StatementSpan, Ident (..)
+   ( ExprSpan, Expr (..), Statement (..), StatementSpan, Ident (..)
    , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 
@@ -60,7 +60,7 @@ isPureExpr (AST.Paren { paren_expr = expr }) = isPureExpr expr
 isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
    all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
 -- XXX what about Lambda?
-isPureExpr other = False
+isPureExpr _other = False
 
 isJumpBytecode :: Bytecode -> Bool
 isJumpBytecode (Bytecode {..}) = isJump opcode

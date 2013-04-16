@@ -64,17 +64,17 @@ import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    ( Identifier, CompileConfig (..)
-   , ConstantID, CompileState (..), BlockState (..)
+   , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier (..), DefinitionScope (..) )
+   , ScopeIdentifier )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
-import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), encode)
+import Blip.Bytecode (Opcode (..), encode)
 import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
-   ( ModuleSpan (..), Module (..), StatementSpan (..), Statement (..)
-   , ExprSpan (..), Expr (..), Ident (..), ArgumentSpan (..), Argument (..)
-   , OpSpan, Op (..), SuiteSpan, Handler (..), HandlerSpan, ExceptClause (..)
+   ( ModuleSpan, Module (..), StatementSpan, Statement (..)
+   , ExprSpan, Expr (..), Ident (..), ArgumentSpan, Argument (..)
+   , OpSpan, Op (..), Handler (..), HandlerSpan, ExceptClause (..)
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
@@ -82,18 +82,17 @@ import Language.Python.Common.AST as AST
    , ParameterSpan, Parameter (..))
 import Language.Python.Common (prettyText)
 import System.FilePath ((<.>), takeBaseName)
-import System.Directory (doesFileExist, getModificationTime, canonicalizePath)
-import System.Time (ClockTime (..))
-import System.IO (openFile, IOMode(..), Handle, hClose, hFileSize, hGetContents)
+-- XXX Commented out to avoid bug in unix package when building on OS X, 
+-- The unix package is depended on by the directory package.
+-- import System.Directory (getModificationTime, canonicalizePath)
+-- import System.Time (ClockTime (..))
+import System.IO (openFile, IOMode(..), hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
 import Data.Traversable as Traversable (mapM)
-import qualified Data.Map as Map
-import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as B (empty)
-import Data.List (sort, intersperse)
+import Data.List (intersperse)
 import Control.Monad (unless, forM_, when, replicateM_, foldM)
 import Control.Exception (try)
-import System.IO.Error (IOError, userError, ioError)
 import Control.Monad.Trans (liftIO)
 import Data.Bits ((.|.), shiftL)
 
@@ -110,11 +109,13 @@ compileFile config path = do
       pyHandle <- openFile path ReadMode
       sizeInBytes <- hFileSize pyHandle
       fileContents <- hGetContents pyHandle
-      modifiedTime <- getModificationTime path
-      let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
+      -- modifiedTime <- getModificationTime path
+      -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
+      let modSeconds = (0 :: Integer)
       pyModule <- parseAndCheckErrors fileContents path
       let (globals, nestedScope) = topScope pyModule
-      canonicalPath <- canonicalizePath path 
+      -- canonicalPath <- canonicalizePath path 
+      canonicalPath <- return path 
       let state = initState globals emptyDefinitionScope
                      nestedScope config canonicalPath
       pyc <- compileModule state (fromIntegral modSeconds)
@@ -175,7 +176,7 @@ newtype Body = Body [StatementSpan]
 instance Compilable Body where
    type CompileResult Body = PyObject
    compile (Body stmts) = do
-      compile stmts
+      mapM_ compile stmts
       -- XXX we could avoid this 'return None' if all branches in the code
       -- ended with a return statement. Can fix this in an optimisation step
       -- with control flow analysis.
@@ -245,6 +246,7 @@ instance Compilable StatementSpan where
             compile aug_assign_expr
             compile aug_assign_op
             emitWriteVar varInfo
+         other -> error $ "unexpected expression in augmented assignment: " ++ prettyText other
    compile (Return { return_expr = Nothing }) = returnNone
    compile (Return { return_expr = Just expr }) =  
       compile expr >> emitCodeNoArg RETURN_VALUE
@@ -255,7 +257,7 @@ instance Compilable StatementSpan where
    compile (Conditional {..}) = do
       restLabel <- newLabel
       mapM_ (compileGuard restLabel) cond_guards 
-      compile cond_else
+      mapM_ compile cond_else
       labelNextInstruction restLabel
    compile (While {..}) = do
       startLoop <- newLabel
@@ -265,11 +267,11 @@ instance Compilable StatementSpan where
       labelNextInstruction startLoop
       compile while_cond
       emitCodeArg POP_JUMP_IF_FALSE anchor
-      compile while_body
+      mapM_ compile while_body
       emitCodeArg JUMP_ABSOLUTE startLoop
       labelNextInstruction anchor 
       emitCodeNoArg POP_BLOCK
-      compile while_else
+      mapM_ compile while_else
       labelNextInstruction endLoop
    compile (For {..}) = do
       startLoop <- newLabel
@@ -284,11 +286,11 @@ instance Compilable StatementSpan where
       when (num_targets > 1) $ do
          emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
       mapM_ compileAssignTo for_targets 
-      compile for_body 
+      mapM_ compile for_body 
       emitCodeArg JUMP_ABSOLUTE startLoop
       labelNextInstruction anchor
       emitCodeNoArg POP_BLOCK
-      compile for_else
+      mapM_ compile for_else
       labelNextInstruction endLoop
    compile stmt@(Fun {..}) = compileFun stmt []
    compile stmt@(Class {..}) = compileClass stmt []
@@ -316,7 +318,7 @@ instance Compilable StatementSpan where
    compile (Try {..}) = do
       firstHandler <- newLabel
       emitCodeArg SETUP_EXCEPT firstHandler
-      compile try_body
+      mapM_ compile try_body
       emitCodeNoArg POP_BLOCK
       end <- newLabel
       emitCodeArg JUMP_FORWARD end
@@ -389,15 +391,16 @@ instance Compilable ExprSpan where
       | isPyObjectExpr expr =
            compileConstantEmit $ constantToPyObject expr
       | otherwise = do
-           mapM compile tuple_exprs
+           -- mapM_ compile tuple_exprs
+           mapM_ compile tuple_exprs
            emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
-   compile expr@(AST.List {..}) = do
-      mapM compile list_exprs
+   compile (AST.List {..}) = do
+      mapM_ compile list_exprs
       emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
-   compile expr@(AST.Set {..}) = do
-      mapM compile set_exprs
+   compile (AST.Set {..}) = do
+      mapM_ compile set_exprs
       emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
-   compile expr@(Dictionary {..}) = do
+   compile (Dictionary {..}) = do
       emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
       forM_ dict_mappings $ \(key, value) -> do
          compile value
@@ -437,8 +440,8 @@ instance Compilable ExprSpan where
       emitCodeNoArg BINARY_SUBSCR
    -- XXX need to support operator chaining.
    compile exp@(BinaryOp {..})
-      | isBoolean operator = compileBoolean exp
-      | isComparison operator = compileComparison exp
+      | isBoolean operator = compileBoolOpExpr exp
+      | isComparison operator = compileCompareOpExpr exp
       | isDot operator = compileDot exp 
       | otherwise = do 
            compile left_op_arg
@@ -451,7 +454,7 @@ instance Compilable ExprSpan where
       funBodyObj <- nestedBlock expr_annot $ do
          -- make the first constant None, to indicate no doc string
          -- for the lambda
-         compileConstant Blip.None
+         _ <- compileConstant Blip.None
          compile lambda_body
          emitCodeNoArg RETURN_VALUE
          assemble
@@ -511,7 +514,7 @@ instance Compilable ImportItemSpan where
 withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
 withDecorators decorators comp = do
    -- push each of the decorators on the stack
-   compile decorators
+   mapM_ compile decorators
    -- run the enclosed computation
    comp
    -- call each of the decorators
@@ -546,6 +549,7 @@ compileFun (Fun {..}) decorators = do
       compileClosure funName funBodyObj numDefaults
    varInfo <- lookupVar funName
    emitWriteVar varInfo
+compileFun other _decorators = error $ "compileFun applied to a non function: " ++ prettyText other
 
 -- Compile a class definition, possibly with decorators.
 compileClass :: StatementSpan -> [DecoratorSpan] -> Compile ()
@@ -567,10 +571,11 @@ compileClass (Class {..}) decorators = do
       emitCodeNoArg LOAD_BUILD_CLASS
       compileClosure className classBodyObj 0
       compileConstantEmit $ Unicode className
-      mapM compile class_args
+      mapM_ compile class_args
       emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
    varInfo <- lookupVar className
    emitWriteVar varInfo
+compileClass other _decorators = error $ "compileClass applied to a non class: " ++ prettyText other
 
 -- XXX CPython uses a "qualified" name for the code object. For instance
 -- nested functions look like "f.<locals>.g", whereas we currently use
@@ -599,7 +604,7 @@ compileClosure name obj numDefaults = do
             case maybeVarInfo of
                Just (CellVar index) -> emitCodeArg LOAD_CLOSURE index
                Just (FreeVar index) -> emitCodeArg LOAD_CLOSURE index
-               Nothing -> error "closure free variable not cell or free var in outer context"
+               _other -> error "closure free variable not cell or free var in outer context"
          emitCodeArg BUILD_TUPLE $ fromIntegral numFreeVars
          compileConstantEmit obj 
          compileConstantEmit $ Unicode name
@@ -620,7 +625,7 @@ compileDefaultParams = foldM compileParam 0
 
 -- Compile a sequence of exception handlers
 compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
-compileHandlers end handlerLabel [] = do
+compileHandlers _end handlerLabel [] = do
    labelNextInstruction handlerLabel
    emitCodeNoArg END_FINALLY
 compileHandlers end handlerLabel (Handler {..} : rest) = do
@@ -628,7 +633,7 @@ compileHandlers end handlerLabel (Handler {..} : rest) = do
    nextLabel <- newLabel 
    compileHandlerClause nextLabel handler_clause
    emitCodeNoArg POP_TOP
-   compile handler_suite
+   mapM_ compile handler_suite
    emitCodeArg JUMP_FORWARD end
    compileHandlers end nextLabel rest 
 
@@ -715,8 +720,7 @@ compileFunDocString :: [StatementSpan] -> Compile ()
 compileFunDocString (firstStmt:_stmts)
    | StmtExpr {..} <- firstStmt,
      Strings {} <- stmt_expr
-        = do compileConstant $ constantToPyObject stmt_expr
-             return ()
+        = compileConstant (constantToPyObject stmt_expr) >> return ()
    | otherwise = compileConstant Blip.None >> return ()
 compileFunDocString [] = compileConstant Blip.None >> return ()
 
@@ -736,7 +740,7 @@ compileGuard restLabel (expr, stmts) = do
    compile expr
    falseLabel <- newLabel
    emitCodeArg POP_JUMP_IF_FALSE falseLabel
-   compile stmts
+   mapM_ compile stmts
    emitCodeArg JUMP_FORWARD restLabel
    labelNextInstruction falseLabel 
 
@@ -782,6 +786,8 @@ constantToPyObject (AST.Strings {..}) =
    stripQuotes ('\'':rest) = init rest
    stripQuotes ('"':rest) = init rest
    stripQuotes other = error $ "bad literal string: " ++ other
+constantToPyObject other =
+   error $ "constantToPyObject applied to an unexpected expression: " ++ prettyText other
 
 -- Compile the arguments to a function call and return the number
 -- of positional arguments, and the number of keyword arguments.
@@ -850,7 +856,7 @@ isComparison (Equality {}) = True
 isComparison (GreaterThanEquals {}) = True
 isComparison (LessThanEquals {}) = True
 isComparison (NotEquals  {}) = True
-isComparison other = False
+isComparison _other = False
 
 compileDot :: ExprSpan -> Compile ()
 compileDot (BinaryOp {..}) = do
@@ -861,9 +867,11 @@ compileDot (BinaryOp {..}) = do
          GlobalVar varInfo <- lookupGlobalVar $ ident_string var_ident
          emitCodeArg LOAD_ATTR varInfo 
       other -> error $ "right argument of dot operator not a variable:\n" ++ prettyText other
+compileDot other =
+   error $ "compileDot applied to an unexpected expression: " ++ prettyText other
 
-compileBoolean :: ExprSpan -> Compile ()
-compileBoolean (BinaryOp {..}) = do
+compileBoolOpExpr :: ExprSpan -> Compile ()
+compileBoolOpExpr (BinaryOp {..}) = do
    endLabel <- newLabel
    compile left_op_arg
    case operator of
@@ -872,6 +880,8 @@ compileBoolean (BinaryOp {..}) = do
       other -> error $ "Unexpected boolean operator:\n" ++ prettyText other
    compile right_op_arg
    labelNextInstruction endLabel
+compileBoolOpExpr other =
+   error $ "compileBoolOpExpr applied to an unexpected expression: " ++ prettyText other
 
 compileOp :: OpSpan -> Compile ()
 compileOp operator =
@@ -888,7 +898,7 @@ compileOp operator =
       Divide {} -> BINARY_TRUE_DIVIDE
       FloorDivide {} -> BINARY_FLOOR_DIVIDE
       Modulo {} -> BINARY_MODULO
-      other -> error $ "Unexpected operator:\n" ++ prettyText operator
+      _other -> error $ "Unexpected operator:\n" ++ prettyText operator
 
 compileUnaryOp :: OpSpan -> Compile ()
 compileUnaryOp operator =
@@ -897,6 +907,7 @@ compileUnaryOp operator =
       Plus {} -> UNARY_POSITIVE
       Not {} -> UNARY_NOT
       Invert {} -> UNARY_INVERT
+      other ->  error $ "Unexpected unary operator: " ++ prettyText other
 
 {-
 from object.h
@@ -946,8 +957,8 @@ enum cmp_op {PyCmp_LT=Py_LT, PyCmp_LE=Py_LE, PyCmp_EQ=Py_EQ, PyCmp_NE=Py_NE, PyC
          # whatever code follows
 -}
 
-compileComparison :: ExprSpan -> Compile ()
-compileComparison expr@(BinaryOp {}) =
+compileCompareOpExpr :: ExprSpan -> Compile ()
+compileCompareOpExpr expr@(BinaryOp {}) =
    compileChain numOps chain
    where
    chain :: [ChainItem]
@@ -956,7 +967,7 @@ compileComparison expr@(BinaryOp {}) =
    numOps = length chain `div` 2
 
    compileChain :: Int -> [ChainItem] -> Compile ()
-   compileChain numOps (Comparator e1 : internal@(Operator op : Comparator e2 : rest)) = do
+   compileChain numOps (Comparator e1 : internal@(Operator op : Comparator e2 : _rest)) = do
       compile e1
       if numOps == 1
          then do
@@ -973,6 +984,7 @@ compileComparison expr@(BinaryOp {}) =
             emitCodeNoArg ROT_TWO
             emitCodeNoArg POP_TOP
             labelNextInstruction end
+   compileChain _numOps _items = error $ "bad operator chain: " ++ prettyText expr
    compileChainInternal :: Word16 -> [ChainItem] -> Compile (OpSpan, ExprSpan)
    compileChainInternal _cleanup [Operator op, Comparator exp] = return (op, exp)
    compileChainInternal cleanup (Operator op : Comparator e : rest) = do
@@ -997,6 +1009,7 @@ compileComparison expr@(BinaryOp {}) =
    comparisonOpCode (IsNot {}) = 9
    -- XXX we don't appear to have an exact match operator in the AST
    comparisonOpCode operator = error $ "Unexpected comparison operator:\n" ++ prettyText operator
+compileCompareOpExpr other = error $ "Unexpected comparison operator:\n" ++ prettyText other 
 
 data ChainItem = Comparator ExprSpan | Operator OpSpan
 

@@ -15,16 +15,12 @@
 module Main where
 
 import System.Exit (exitFailure, exitSuccess)
-import System.Environment (getArgs)
-import System.IO (openFile, IOMode(..), Handle, hClose)
-import Control.Monad (when, mapM_)
+import Control.Monad (when)
 import System.Console.ParseArgs
-   (Argtype (..), argDataOptional, argDataRequired, Arg (..)
+   (Argtype (..), argDataOptional, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
 import Blip.Version (versionString)
 import Compile (compileFile)
-import Blip.Marshal (writePyc)
-import Blip.Pretty (prettyString)
 import ProgName (progName)
 import Data.Set as Set (Set, empty, singleton, union)
 import Types (Dumpable (..), CompileConfig (..))

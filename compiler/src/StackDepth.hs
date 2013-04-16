@@ -17,13 +17,11 @@
 
 module StackDepth (maxStackDepth) where
  
-import Debug.Trace (trace)
 import Types (AnnotatedCode (..))
-import Monad (Compile (..))
-import Utils (isJump, isJumpBytecode, isRelativeJump, isConditionalJump)
+import Utils (isJumpBytecode, isRelativeJump, isConditionalJump)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Data.Word (Word32, Word16)
-import Control.Monad.RWS.Strict (RWS (..), runRWS, ask, local, gets, modify, when, unless)
+import Control.Monad.RWS.Strict (RWS, runRWS, ask, local, gets, modify, when)
 import qualified Data.Map as Map
 import qualified Data.Set as Set (insert, member, Set, empty)
 import Data.Bits ((.&.), shiftR)
@@ -100,7 +98,7 @@ recordDepth index depth = do
 
 maxStackDepthM :: StackDepth -> [AnnotatedCode] -> CalcStackDepth ()
 maxStackDepthM _depth [] = return ()
-maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
+maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : _rest) = do
    -- check if this instruction is a jump target
    if isLabelled instruction
       then do
@@ -128,6 +126,8 @@ maxStackDepthM depth code@(instruction@(AnnotatedCode {..}) : rest) = do
        -- unless the current instruction is an unconditional jump
        when (isConditionalBytecode annotatedCode_bytecode) $
           maxStackDepthM newDepth rest
+   maxStackDepthFurther _depth [] =
+      error $ "maxStackDepthFurther called on empty sequence of code"
 
 isConditionalBytecode :: Bytecode -> Bool
 isConditionalBytecode (Bytecode {..}) = isConditionalJump opcode
@@ -307,7 +307,7 @@ codeStackEffect bytecode@(Bytecode {..}) =
       LOAD_DEREF -> 1
       STORE_DEREF -> -1
       DELETE_DEREF -> 0
-      other -> error $ "unexpected opcode in codeStackEffect: " ++ show bytecode
+      _other -> error $ "unexpected opcode in codeStackEffect: " ++ show bytecode
    where
    -- #define NARGS(o) (((o) % 256) + 2*(((o) / 256) % 256)) 
    nargs :: Word32 -> Word32

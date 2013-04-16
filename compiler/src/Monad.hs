@@ -14,9 +14,9 @@
 
 module Monad (Compile (..), runCompileMonad)  where
 
-import Types (CompileState (..), BlockState (..))
+import Types (CompileState (..))
 import Control.Monad.State.Strict as State hiding (State)
-import Control.Monad.State.Class (MonadState (..))
+-- import Control.Monad.State.Class (MonadState (..))
 import Control.Applicative (Applicative (..))
 
 newtype Compile a

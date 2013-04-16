@@ -14,15 +14,13 @@
 
 module Assemble (assemble) where
  
-import Utils (isJumpBytecode, isRelativeJump, isAbsoluteJump)
+import Utils (isRelativeJump, isAbsoluteJump)
 import Types (BlockState (..), AnnotatedCode (..), LabelMap)
 import State (getBlockState, getLabelMap, modifyBlockState)
-import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
-import Control.Monad.Trans (liftIO)
+import Blip.Bytecode (Bytecode (..), BytecodeArg (..), bytecodeSize)
 import Monad (Compile (..))
-import Data.Map as Map (Map, insert, empty, lookup)
+import Data.Map as Map (lookup)
 import Data.Word (Word16)
-import Data.List as List (foldl')
 
 assemble :: Compile ()
 assemble = do

@@ -28,17 +28,17 @@ module State
 import Monad (Compile (..))
 import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
-   , ConstantID, ConstantCache, CompileState (..), BlockState (..)
+   , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
    , DefinitionScope (..), VarInfo (..), ScopeIdentifier )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
-import Data.Word (Word32, Word16)
+import Data.Word (Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
-import Control.Monad.State.Class (MonadState (..))
+-- import Control.Monad.State.Class (MonadState (..))
 import Data.List (sort)
 
 emptyVarSet :: VarSet

@@ -15,24 +15,22 @@
 module Blip.Marshal (readPyc, writePyc, PycFile (..), PyObject (..)) where
 
 import Blip.MarshalDouble (bytesToDouble, doubleToBytes)
-import Blip.Bytecode (decode, encode, BytecodeSeq (..))
+import Blip.Bytecode (decode, BytecodeSeq (..))
 import Blip.Pretty (Pretty (..), prettyList, prettyTuple)
 import Control.Applicative ((<$>), (<*>))
 import Data.Map as Map hiding (map, size)
 import Data.Word (Word8, Word32)
-import Data.Binary (Binary (..))
 import Control.Monad.Error (ErrorT (..), lift, replicateM)
 import System.IO (Handle)
 import qualified Data.ByteString.Lazy as B 
-   (ByteString, hGetContents, empty, unpack, hPutStr, length)
+   (ByteString, hGetContents, unpack, hPutStr, length)
 import Data.ByteString.Lazy.UTF8 as UTF8 (toString, fromString) 
 import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8)
-import Data.Binary.Put (Put, PutM, putWord32le, putLazyByteString, runPutM, putWord8)
+import Data.Binary.Put (PutM, putWord32le, putLazyByteString, runPutM, putWord8)
 import Data.Int (Int64)
 import Data.Char (chr, ord)
 import Text.PrettyPrint
-   (text, (<+>), ($$), render, empty, integer, (<>), hsep, Doc, parens
-   , comma, hcat, vcat, rparen, int, equals, doubleQuotes, brackets, punctuate)
+   (text, (<+>), ($$), (<>), Doc , vcat, int, equals, doubleQuotes)
 
 data PycFile =
    PycFile
@@ -113,7 +111,7 @@ prettyConsts obj =
    case obj of
       Tuple {..} -> 
          vcat $ map prettyConst $ zip [0..] elements
-      other -> text ("consts not a tuple: " ++ show obj)
+      _other -> text ("consts not a tuple: " ++ show obj)
    where
    prettyConst :: (Int, PyObject) -> Doc
    prettyConst (i, obj) = text "const" <+> int i <+> equals <+> pretty obj 
@@ -122,7 +120,7 @@ prettyLnotab :: PyObject -> Doc
 prettyLnotab obj =
    case obj of
       String {..} -> prettyList $ map pretty $ B.unpack string
-      other -> text ("lnotab not a string: " ++ show obj)
+      _other -> text ("lnotab not a string: " ++ show obj)
 
 readPyc :: Handle -> IO PycFile
 readPyc handle = do
@@ -194,6 +192,7 @@ writeCodeObject (Code {..}) =
       filename, name] >>
    putU32 firstlineno >>
    writeObject lnotab
+writeCodeObject other = error $ "writeCodeObject called on non code object: " ++ show other
 
 readStringObject :: GetData PyObject
 readStringObject = do
@@ -205,6 +204,7 @@ writeStringObject (String {..}) =
    writeObjectType STRING >>
    putU32 (fromIntegral $ B.length string) >>
    putBS string
+writeStringObject other = error $ "writStringObject called on non string object: " ++ show other
 
 readTupleObject :: GetData PyObject
 readTupleObject = do
@@ -216,6 +216,7 @@ writeTupleObject (Tuple {..}) =
    writeObjectType TUPLE >>
    putU32 (fromIntegral $ length elements) >>
    mapM_ writeObject elements
+writeTupleObject other = error $ "writeTupleObject called on non tuple object: " ++ show other
 
 readIntObject :: GetData PyObject
 readIntObject = Int <$> getU32
@@ -223,6 +224,7 @@ readIntObject = Int <$> getU32
 writeIntObject :: PyObject -> PutData
 writeIntObject (Int {..}) = 
    writeObjectType INT >> putU32 int_value
+writeIntObject other = error $ "writeIntObject called on non int object: " ++ show other
 
 readFloatObject :: GetData PyObject
 readFloatObject = Float <$> getDouble
@@ -232,12 +234,13 @@ readComplexObject = Complex <$> getDouble <*> getDouble
 
 writeFloatObject :: PyObject -> PutData
 writeFloatObject (Float {..}) = 
-   -- writeObjectType BINARY_FLOAT >> putE float_value
    writeObjectType BINARY_FLOAT >> putDouble float_value
+writeFloatObject other = error $ "writeFloatObject called on non float object: " ++ show other
 
 writeComplexObject :: PyObject -> PutData
 writeComplexObject (Complex {..}) =
    writeObjectType BINARY_COMPLEX >> putDouble real >> putDouble imaginary
+writeComplexObject other = error $ "writeComplexObject called on non complex object: " ++ show other
 
 readUnicodeObject :: GetData PyObject
 readUnicodeObject = do
@@ -251,6 +254,7 @@ writeUnicodeObject (Unicode {..}) = do
    let uc = UTF8.fromString unicode 
    putU32 (fromIntegral $ B.length uc)
    putBS uc
+writeUnicodeObject other = error $ "writeUnicodeObject called on non unicode object: " ++ show other
 
 data ObjectType
    = NULL               -- '0'
@@ -329,9 +333,6 @@ decodeObjectType byte =
 -- utilities for reading binary data from a sequence of bytes
 type GetData a = ErrorT String Get a
 
-getE :: Binary a => GetData a
-getE = lift get
-
 getDouble :: GetData Double
 getDouble = do
    bs <- replicateM 8 getU8
@@ -360,9 +361,6 @@ runGetDataCheck g b =
 
 -- utilities for writing binary data to a sequence of bytes
 type PutData = ErrorT String PutM ()
-
-putE :: Binary a => a -> PutData
-putE = lift . put
 
 putDouble :: Double -> PutData
 putDouble d = mapM_ putU8 $ doubleToBytes d

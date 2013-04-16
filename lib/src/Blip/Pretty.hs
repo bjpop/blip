@@ -18,8 +18,7 @@ module Blip.Pretty
    , showBits
    )where
 
-import Data.Word (Word64, Word32, Word16, Word8, Word)
-import Data.Char (chr)
+import Data.Word (Word64, Word32, Word16, Word8)
 import Text.PrettyPrint
 import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy.Char8 (unpack)

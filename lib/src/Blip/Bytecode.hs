@@ -14,15 +14,13 @@ module Blip.Bytecode
    ( decode, encode, Opcode (..), Bytecode (..),
      BytecodeArg (..), BytecodeSeq (..), bytecodeSize ) where
 
-import Data.Word ( Word64, Word8, Word16, Word32 )
+import Data.Word (Word8, Word16)
 import Data.ByteString.Lazy as B 
-   ( ByteString, hGet, hGetContents, empty, unpack, pack )
-import Data.Char (chr)
+   ( ByteString, unpack, pack )
 import Data.Map as Map hiding (map)
 import Data.Bits ((.&.), shiftL, shiftR)
 import Text.PrettyPrint
-   ( text, (<+>), ($$), render, empty, integer, (<>), hsep, Doc, parens
-   , comma, hcat, int, vcat )
+   ( text, (<+>), Doc, int, vcat )
 import Blip.Pretty (Pretty (..))
 
 data Opcode
@@ -328,7 +326,7 @@ decodeWords (w:ws) =
                   w1:w2:rest ->
                      let arg16 = Arg16 $ word8sToWord16 w1 w2 in
                      Bytecode opcode (Just arg16) : decodeWords rest
-                  other ->
+                  _other ->
                      error ("truncated bytecode stream: " ++ show (w:ws))
             else
                Bytecode opcode Nothing : decodeWords ws

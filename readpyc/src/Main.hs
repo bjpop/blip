@@ -13,12 +13,11 @@
 
 module Main where
 
-import System.Exit (ExitCode (..), exitWith, exitFailure)
-import System.Environment (getArgs)
-import System.IO (openFile, IOMode(..), Handle, hClose)
+import System.Exit (ExitCode (..), exitWith)
+import System.IO (openFile, IOMode(..), hClose)
 import Control.Monad (when)
 import System.Console.ParseArgs
-   (Argtype (..), argDataOptional, argDataRequired, Arg (..)
+   (Argtype (..), argDataOptional, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
 import Blip.Version (versionString)
 import Blip.Marshal (readPyc)

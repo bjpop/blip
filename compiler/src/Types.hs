@@ -15,14 +15,13 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier (..) ) where
+   , ScopeIdentifier ) where
 
-import Data.Set (Set (..))
+import Data.Set (Set)
 import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import Language.Python.Common.SrcLocation (SrcSpan)
 
 -- information about how a variable is bound plus its offset into
