@@ -12,7 +12,12 @@ Build-type:          Simple
 Cabal-version:       >=1.8
 Description:
 
+source-repository head
+  type: git
+  location: git://github.com/bjpop/blip.git
+
 Library {
+   ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
    hs-source-dirs: src
    exposed-modules:
       Blip.Bytecode,
@@ -22,11 +27,11 @@ Library {
       Blip.Version
    build-depends:
       base==4.*,
-      binary==0.5.*,
+      binary==0.7.*,
       mtl==2.1.*,
-      containers==0.4.*,
+      containers==0.5.*,
       pretty==1.1.*,
-      bytestring==0.9.*,
+      bytestring==0.10.*,
       utf8-string==0.3.*
    other-modules:
       Paths_bliplib

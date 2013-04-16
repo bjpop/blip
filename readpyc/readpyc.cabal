@@ -12,7 +12,12 @@ Build-type:          Simple
 Cabal-version:       >=1.8
 Description:
 
+source-repository head
+  type: git
+  location: git://github.com/bjpop/blip.git
+
 Executable readpyc {
+   ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
    main-is: Main.hs
    hs-source-dirs: src
    build-depends:
