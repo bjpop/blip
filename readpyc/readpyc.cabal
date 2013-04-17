@@ -10,7 +10,7 @@ Stability:           Experimental
 category:            Development
 Build-type:          Simple
 Cabal-version:       >=1.8
-Description:
+Description:         Read and pretty print Python bytecode (.pyc) files.
 
 source-repository head
   type: git
