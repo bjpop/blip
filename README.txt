@@ -71,6 +71,10 @@ To clean, use:
 
    make clean
 
+Alternatively, if you want to use cabal-dev then use the command:
+
+   make dev
+
 Testing
 -------
 

@@ -10,6 +10,10 @@ all configure clean install:
 	$(MAKE) $@ --directory=compiler
 	$(MAKE) $@ --directory=readpyc
 
-.PHONY : test
+.PHONY: dev
+dev:
+	cabal-dev install lib/ readpyc/ compiler/
+
+.PHONY: test
 test:
 	shelltest --color --execdir test/regression -- -j1
