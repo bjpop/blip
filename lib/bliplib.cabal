@@ -3,7 +3,7 @@ Version:             0.1.0
 Synopsis:            Support code for Blip.
 Homepage:            https://github.com/bjpop/blip 
 License:             BSD3
-License-file:        ../LICENSE
+License-file:        LICENSE
 Author:              Bernie Pope
 Maintainer:          Bernie Pope <florbitous@gmail.com>
 Stability:           Experimental
