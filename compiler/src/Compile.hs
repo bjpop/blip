@@ -81,6 +81,7 @@ import Language.Python.Common.AST as AST
    , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
    , ParameterSpan, Parameter (..))
 import Language.Python.Common (prettyText)
+import Language.Python.Common.StringEscape (unescapeString)
 import System.FilePath ((<.>), takeBaseName)
 -- XXX Commented out to avoid bug in unix package when building on OS X, 
 -- The unix package is depended on by the directory package.
@@ -769,17 +770,16 @@ constantToPyObject (AST.Bool { bool_value = False }) = Blip.FalseObj
 constantToPyObject (AST.None {}) = Blip.None
 constantToPyObject (AST.Ellipsis {}) = Blip.Ellipsis
 -- assumes all the tuple elements are constant
--- XXX what about tuples containig lists?
 constantToPyObject (AST.Tuple {..}) =
    Blip.Tuple { elements = map constantToPyObject tuple_exprs }
 constantToPyObject (AST.Strings {..}) =
-   Blip.Unicode { unicode = concat $ map stripQuotes strings_strings }
-   where
    -- The strings in the AST retain their original quote marks which
    -- need to be removed, we have to remove single or triple quotes.
    -- We assume the parser has correctly matched the quotes.
-   -- XXX this is ugly, perhaps we should fix the parser to not
-   -- include the quotes.
+   -- Escaped characters such as \n \t are parsed as multiple characters
+   -- and need to be converted back into single characters.
+   Blip.Unicode { unicode = concat $ map (unescapeString . stripQuotes) strings_strings }
+   where
    stripQuotes :: String -> String
    stripQuotes ('\'':'\'':'\'':rest) = take (length rest - 3) rest
    stripQuotes ('"':'"':'"':rest) = take (length rest - 3) rest
