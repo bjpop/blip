@@ -1013,9 +1013,12 @@ compileCompareOpExpr other = error $ "Unexpected comparison operator:\n" ++ pret
 
 data ChainItem = Comparator ExprSpan | Operator OpSpan
 
+-- XXX this is buggy it the operator is not a comparison operator.
 flattenComparisonChain :: [ChainItem] -> ExprSpan -> [ChainItem] 
-flattenComparisonChain acc (BinaryOp {..}) = 
-   flattenComparisonChain newAcc left_op_arg
+flattenComparisonChain acc opExpr@(BinaryOp {..}) 
+   | isComparison operator
+        = flattenComparisonChain newAcc left_op_arg
+   | otherwise = [Comparator opExpr] ++ acc 
    where
    newAcc = [Operator operator, Comparator right_op_arg] ++ acc
 flattenComparisonChain acc other = [Comparator other] ++ acc

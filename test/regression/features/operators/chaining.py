@@ -10,3 +10,5 @@ print((x < z) > y) # should be same as (3 < 4 and True > 2)
 print(y < x < z < w) # 5-chain True answer
 print(y < z < x < w) # 5-chain False answer
 print(y < z < x + 2 < w) # 5-chain True answer, nested expression
+
+print(w & (2 ** 4) != 0)
