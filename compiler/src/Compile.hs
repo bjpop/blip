@@ -247,6 +247,24 @@ instance Compilable StatementSpan where
             compile aug_assign_expr
             compile aug_assign_op
             emitWriteVar varInfo
+         Subscript {..} -> do
+            compile subscriptee
+            compile subscript_expr
+            emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
+            emitCodeNoArg BINARY_SUBSCR
+            compile aug_assign_expr
+            compile aug_assign_op
+            emitCodeNoArg ROT_THREE
+            emitCodeNoArg STORE_SUBSCR
+         expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
+            compile $ left_op_arg expr
+            emitCodeNoArg DUP_TOP
+            GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+            emitCodeArg LOAD_ATTR index 
+            compile aug_assign_expr
+            compile aug_assign_op
+            emitCodeNoArg ROT_TWO
+            emitCodeArg STORE_ATTR index 
          other -> error $ "unexpected expression in augmented assignment: " ++ prettyText other
    compile (Return { return_expr = Nothing }) = returnNone
    compile (Return { return_expr = Just expr }) =  
