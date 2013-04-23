@@ -59,14 +59,14 @@ import State
    , getObjectName, setObjectName, getGlobals
    , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
    , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar
-   , lookupGlobalVar, lookupClosureVar )
+   , lookupGlobalVar, lookupClosureVar, setFlag )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier )
+   , ScopeIdentifier, CodeObjectFlagMask )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Opcode (..), encode)
@@ -197,6 +197,7 @@ makeObject = do
    cellVars <- getBlockState state_cellVars
    localVars <- getBlockState state_locals
    argcount <- getBlockState state_argcount
+   flags <- getBlockState state_flags
    let code = map annotatedCode_bytecode annotatedCode 
        localVarNames = map Unicode $ indexedVarSetKeys localVars
        maxStackDepth = maxBound 
@@ -212,7 +213,7 @@ makeObject = do
                    , kwonlyargcount = 0
                    , nlocals = fromIntegral $ length localVarNames
                    , stacksize = stackDepth 
-                   , flags = 0
+                   , flags = flags 
                    , code = String $ encode code
                    , consts = makeConstants constants
                    , names = makeNames names
@@ -439,9 +440,9 @@ instance Compilable ExprSpan where
              mkAssign (mkSubscript (mkVar $ mkIdent "$result") key) val
       compileComprehension "<dictcomp>" initStmt updater dict_comprehension
    compile (Yield { yield_expr = Nothing }) =
-      compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE
+      compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    compile (Yield { yield_expr = Just expr }) =
-      compile expr >> emitCodeNoArg YIELD_VALUE 
+      compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    -- XXX should handle keyword arguments etc.
    compile (Call {..}) = do
       compile call_fun
@@ -1060,3 +1061,35 @@ maybeDumpAST ast = do
    ifDump DumpAST $ do
       liftIO $ putStrLn "Abstract Syntax Tree:"
       liftIO $ putStrLn $ show ast
+
+-- masks for the code object flags
+{-
+co_optimized :: CodeObjectFlagMask
+co_optimized = 0x0001
+co_newlocals :: CodeObjectFlagMask 
+co_newlocals = 0x0002
+co_varargs :: CodeObjectFlagMask 
+co_varargs = 0x0004
+co_varkeywords :: CodeObjectFlagMask 
+co_varkeywords = 0x0008
+co_nested :: CodeObjectFlagMask 
+co_nested = 0x0010
+-}
+co_generator :: CodeObjectFlagMask 
+co_generator = 0x0020
+{-
+co_nofree :: CodeObjectFlagMask 
+co_nofree = 0x0040
+co_future_division :: CodeObjectFlagMask 
+co_future_division = 0x2000
+co_future_absolute_import :: CodeObjectFlagMask 
+co_future_absolute_import = 0x4000
+co_future_with_statement :: CodeObjectFlagMask 
+co_future_with_statement = 0x8000
+co_future_print_function :: CodeObjectFlagMask 
+co_future_print_function = 0x10000
+co_future_unicode_literals :: CodeObjectFlagMask 
+co_future_unicode_literals = 0x20000
+co_future_barry_as_bdfl :: CodeObjectFlagMask 
+co_future_barry_as_bdfl = 0x40000
+-}

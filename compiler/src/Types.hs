@@ -15,7 +15,7 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier ) where
+   , ScopeIdentifier, CodeObjectFlagMask ) where
 
 import Data.Set (Set)
 import Blip.Bytecode (Bytecode (..))
@@ -106,5 +106,8 @@ data BlockState = BlockState
    , state_cellVars :: IndexedVarSet
    , state_classLocals :: VarSet
    , state_argcount :: !Word32
+   , state_flags :: !Word32
    }
    deriving (Show)
+
+type CodeObjectFlagMask = Word32

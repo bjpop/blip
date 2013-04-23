@@ -1,0 +1,10 @@
+blip yield.py && python3.3 yield.pyc
+<<<
+>>>
+<class 'function'>
+<class 'generator'>
+3
+5
+StopIteration caught
+>>>2
+>>>=0

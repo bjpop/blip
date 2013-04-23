@@ -22,7 +22,7 @@ module State
    , getObjectName, setObjectName, getLabelMap, getGlobals
    , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
    , lookupNestedScope, indexedVarSetKeys, lookupVar, lookupGlobalVar
-   , emitReadVar, emitWriteVar, lookupClosureVar )
+   , emitReadVar, emitWriteVar, lookupClosureVar, setFlag )
    where
 
 import Monad (Compile (..))
@@ -30,7 +30,7 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier )
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, CodeObjectFlagMask )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -38,8 +38,8 @@ import Data.Word (Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
--- import Control.Monad.State.Class (MonadState (..))
 import Data.List (sort)
+import Data.Bits ((.|.))
 
 emptyVarSet :: VarSet
 emptyVarSet = Set.empty
@@ -84,6 +84,7 @@ initBlockState (DefinitionScope {..}) nestedScope = BlockState
                          definitionScope_freeVars 
    , state_classLocals = definitionScope_classLocals 
    , state_argcount = fromIntegral $ length definitionScope_params
+   , state_flags = 0
    }
 
 -- Local variables are indexed starting with parameters first, in the order
@@ -323,3 +324,9 @@ lookupGlobalVar ident = do
                        , state_names = ident : oldNames }
          return $ GlobalVar index 
       Just index -> return $ GlobalVar index 
+
+setFlag :: CodeObjectFlagMask -> Compile ()
+setFlag mask = do
+    oldFlags <- getBlockState state_flags 
+    let newFlags = oldFlags .|. mask
+    modifyBlockState $ \state -> state { state_flags = newFlags }
