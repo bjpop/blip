@@ -1,0 +1,13 @@
+blip for_continue.py && python3.3 for_continue.pyc
+<<<
+>>>
+before loop
+0
+1
+2
+3
+4
+5
+after loop
+>>>2
+>>>=0
