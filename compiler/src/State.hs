@@ -22,7 +22,8 @@ module State
    , getObjectName, setObjectName, getLabelMap, getGlobals
    , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
    , lookupNestedScope, indexedVarSetKeys, lookupVar, lookupGlobalVar
-   , emitReadVar, emitWriteVar, lookupClosureVar, setFlag )
+   , emitReadVar, emitWriteVar, lookupClosureVar, setFlag, pushFrameBlock
+   , popFrameBlock, peekFrameBlock, withFrameBlock )
    where
 
 import Monad (Compile (..))
@@ -30,7 +31,8 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, CodeObjectFlagMask )
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, CodeObjectFlagMask 
+   , FrameBlockInfo (..))
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..))
@@ -85,6 +87,7 @@ initBlockState (DefinitionScope {..}) nestedScope = BlockState
    , state_classLocals = definitionScope_classLocals 
    , state_argcount = fromIntegral $ length definitionScope_params
    , state_flags = 0
+   , state_frameBlockStack = []
    }
 
 -- Local variables are indexed starting with parameters first, in the order
@@ -325,8 +328,36 @@ lookupGlobalVar ident = do
          return $ GlobalVar index 
       Just index -> return $ GlobalVar index 
 
+-- set a flag in the code object by applying a mask 
 setFlag :: CodeObjectFlagMask -> Compile ()
 setFlag mask = do
     oldFlags <- getBlockState state_flags 
     let newFlags = oldFlags .|. mask
     modifyBlockState $ \state -> state { state_flags = newFlags }
+
+pushFrameBlock :: FrameBlockInfo -> Compile ()
+pushFrameBlock info = do
+   oldFrameStack <- getBlockState state_frameBlockStack
+   let newFrameStack = info : oldFrameStack
+   modifyBlockState $ \state -> state { state_frameBlockStack = newFrameStack }
+
+popFrameBlock :: Compile ()
+popFrameBlock = do
+   oldFrameStack <- getBlockState state_frameBlockStack
+   case oldFrameStack of
+      [] -> error "attempt to pop from an empty frame block stack"
+      _:rest -> modifyBlockState $ \state -> state { state_frameBlockStack = rest }
+
+peekFrameBlock :: Compile FrameBlockInfo
+peekFrameBlock = do
+   oldFrameStack <- getBlockState state_frameBlockStack
+   case oldFrameStack of
+      [] -> error "attempt to pop from an empty frame block stack"
+      top:_rest -> return top
+
+withFrameBlock :: FrameBlockInfo -> Compile a -> Compile a
+withFrameBlock info comp = do 
+    pushFrameBlock info
+    result <- comp
+    popFrameBlock
+    return result

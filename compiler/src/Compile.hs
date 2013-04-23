@@ -59,14 +59,16 @@ import State
    , getObjectName, setObjectName, getGlobals
    , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
    , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar
-   , lookupGlobalVar, lookupClosureVar, setFlag )
+   , lookupGlobalVar, lookupClosureVar, setFlag
+   , peekFrameBlock, withFrameBlock )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier, CodeObjectFlagMask )
+   , ScopeIdentifier, CodeObjectFlagMask
+   , FrameBlockInfo (..), FrameBlock (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Opcode (..), encode)
@@ -284,32 +286,34 @@ instance Compilable StatementSpan where
       endLoop <- newLabel
       anchor <- newLabel
       emitCodeArg SETUP_LOOP endLoop
-      labelNextInstruction startLoop
-      compile while_cond
-      emitCodeArg POP_JUMP_IF_FALSE anchor
-      mapM_ compile while_body
-      emitCodeArg JUMP_ABSOLUTE startLoop
-      labelNextInstruction anchor 
-      emitCodeNoArg POP_BLOCK
+      withFrameBlock (FrameBlockInfo FrameBlockLoop startLoop) $ do
+          labelNextInstruction startLoop
+          compile while_cond
+          emitCodeArg POP_JUMP_IF_FALSE anchor
+          mapM_ compile while_body
+          emitCodeArg JUMP_ABSOLUTE startLoop
+          labelNextInstruction anchor 
+          emitCodeNoArg POP_BLOCK
       mapM_ compile while_else
       labelNextInstruction endLoop
    compile (For {..}) = do
       startLoop <- newLabel
       endLoop <- newLabel
-      anchor <- newLabel
-      emitCodeArg SETUP_LOOP endLoop
-      compile for_generator
-      emitCodeNoArg GET_ITER
-      labelNextInstruction startLoop
-      emitCodeArg FOR_ITER anchor
-      let num_targets = length for_targets
-      when (num_targets > 1) $ do
-         emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
-      mapM_ compileAssignTo for_targets 
-      mapM_ compile for_body 
-      emitCodeArg JUMP_ABSOLUTE startLoop
-      labelNextInstruction anchor
-      emitCodeNoArg POP_BLOCK
+      withFrameBlock (FrameBlockInfo FrameBlockLoop startLoop) $ do
+         anchor <- newLabel
+         emitCodeArg SETUP_LOOP endLoop
+         compile for_generator
+         emitCodeNoArg GET_ITER
+         labelNextInstruction startLoop
+         emitCodeArg FOR_ITER anchor
+         let num_targets = length for_targets
+         when (num_targets > 1) $ do
+            emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
+         mapM_ compileAssignTo for_targets 
+         mapM_ compile for_body 
+         emitCodeArg JUMP_ABSOLUTE startLoop
+         labelNextInstruction anchor
+         emitCodeNoArg POP_BLOCK
       mapM_ compile for_else
       labelNextInstruction endLoop
    compile stmt@(Fun {..}) = compileFun stmt []
@@ -368,6 +372,11 @@ instance Compilable StatementSpan where
             emitCodeNoArg POP_TOP
    -- XXX should check that we are inside a loop
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
+   compile (Continue {}) = do
+      FrameBlockInfo {..} <- peekFrameBlock
+      case frameBlock_type of
+         FrameBlockLoop -> emitCodeArg JUMP_ABSOLUTE frameBlock_label
+         other -> error $ "unsupported frame block type: " ++ show other
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile (Decorated {..}) =

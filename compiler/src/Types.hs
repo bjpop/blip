@@ -15,7 +15,8 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier, CodeObjectFlagMask ) where
+   , ScopeIdentifier, CodeObjectFlagMask, FrameBlock (..)
+   , FrameBlockInfo (..) ) where
 
 import Data.Set (Set)
 import Blip.Bytecode (Bytecode (..))
@@ -107,7 +108,21 @@ data BlockState = BlockState
    , state_classLocals :: VarSet
    , state_argcount :: !Word32
    , state_flags :: !Word32
+   , state_frameBlockStack :: [FrameBlockInfo]
    }
    deriving (Show)
 
 type CodeObjectFlagMask = Word32
+
+data FrameBlock
+   = FrameBlockLoop 
+   | FrameBlockExcept 
+   | FrameBlockFinally_try 
+   | FrameBlockFinally_end
+   deriving Show
+
+data FrameBlockInfo
+   = FrameBlockInfo
+     { frameBlock_type :: !FrameBlock
+     , frameBlock_label :: !Word16 } 
+   deriving Show
