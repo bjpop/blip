@@ -341,23 +341,27 @@ pushFrameBlock info = do
    let newFrameStack = info : oldFrameStack
    modifyBlockState $ \state -> state { state_frameBlockStack = newFrameStack }
 
-popFrameBlock :: Compile ()
+popFrameBlock :: Compile FrameBlockInfo
 popFrameBlock = do
    oldFrameStack <- getBlockState state_frameBlockStack
    case oldFrameStack of
       [] -> error "attempt to pop from an empty frame block stack"
-      _:rest -> modifyBlockState $ \state -> state { state_frameBlockStack = rest }
+      top:rest -> do
+         modifyBlockState $ \state -> state { state_frameBlockStack = rest }
+         return top
 
-peekFrameBlock :: Compile FrameBlockInfo
+peekFrameBlock :: Compile (Maybe FrameBlockInfo)
 peekFrameBlock = do
    oldFrameStack <- getBlockState state_frameBlockStack
    case oldFrameStack of
-      [] -> error "attempt to pop from an empty frame block stack"
-      top:_rest -> return top
+      [] -> return Nothing
+      top:_rest -> return $ Just top
 
 withFrameBlock :: FrameBlockInfo -> Compile a -> Compile a
-withFrameBlock info comp = do 
-    pushFrameBlock info
+withFrameBlock pushedInfo comp = do 
+    pushFrameBlock pushedInfo
     result <- comp
-    popFrameBlock
-    return result
+    poppedInfo <- popFrameBlock
+    if pushedInfo /= poppedInfo
+       then error $ "pushed frame block not equal to popped frame block"
+       else return result

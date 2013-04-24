@@ -68,7 +68,7 @@ import Types
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
    , ScopeIdentifier, CodeObjectFlagMask
-   , FrameBlockInfo (..), FrameBlock (..) )
+   , FrameBlockInfo (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
 import Blip.Bytecode (Opcode (..), encode)
@@ -286,7 +286,7 @@ instance Compilable StatementSpan where
       endLoop <- newLabel
       anchor <- newLabel
       emitCodeArg SETUP_LOOP endLoop
-      withFrameBlock (FrameBlockInfo FrameBlockLoop startLoop) $ do
+      withFrameBlock (FrameBlockLoop startLoop) $ do
           labelNextInstruction startLoop
           compile while_cond
           emitCodeArg POP_JUMP_IF_FALSE anchor
@@ -299,7 +299,7 @@ instance Compilable StatementSpan where
    compile (For {..}) = do
       startLoop <- newLabel
       endLoop <- newLabel
-      withFrameBlock (FrameBlockInfo FrameBlockLoop startLoop) $ do
+      withFrameBlock (FrameBlockLoop startLoop) $ do
          anchor <- newLabel
          emitCodeArg SETUP_LOOP endLoop
          compile for_generator
@@ -342,8 +342,9 @@ instance Compilable StatementSpan where
    compile (Try {..}) = do
       firstHandler <- newLabel
       emitCodeArg SETUP_EXCEPT firstHandler
-      mapM_ compile try_body
-      emitCodeNoArg POP_BLOCK
+      withFrameBlock FrameBlockExcept $ do
+         mapM_ compile try_body
+         emitCodeNoArg POP_BLOCK
       end <- newLabel
       emitCodeArg JUMP_FORWARD end
       compileHandlers end firstHandler try_excepts
@@ -373,10 +374,27 @@ instance Compilable StatementSpan where
    -- XXX should check that we are inside a loop
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
    compile (Continue {}) = do
-      FrameBlockInfo {..} <- peekFrameBlock
-      case frameBlock_type of
-         FrameBlockLoop -> emitCodeArg JUMP_ABSOLUTE frameBlock_label
-         other -> error $ "unsupported frame block type: " ++ show other
+      maybeFrameBlockInfo <- peekFrameBlock
+      case maybeFrameBlockInfo of
+         Nothing -> error loopError
+         Just (FrameBlockLoop label) -> emitCodeArg JUMP_ABSOLUTE label 
+         Just FrameBlockFinallyEnd ->
+            error finallyError
+         Just _other -> checkFrameBlocks
+      where
+      -- keep blocking the frame block stack until we either find
+      -- a loop entry, otherwise generate an error
+      checkFrameBlocks :: Compile ()
+      checkFrameBlocks = do
+         maybeFrameBlockInfo <- peekFrameBlock
+         case maybeFrameBlockInfo of
+            Nothing -> error loopError
+            Just FrameBlockFinallyEnd -> error finallyError 
+            Just (FrameBlockLoop label) ->
+               emitCodeArg CONTINUE_LOOP label
+            Just _other -> checkFrameBlocks
+      loopError = "'continue' not properly in loop"
+      finallyError = "'continue' not supported inside 'finally' clause"
    compile (NonLocal {}) = return ()
    compile (Global {}) = return ()
    compile (Decorated {..}) =
@@ -420,7 +438,6 @@ instance Compilable ExprSpan where
       | isPyObjectExpr expr =
            compileConstantEmit $ constantToPyObject expr
       | otherwise = do
-           -- mapM_ compile tuple_exprs
            mapM_ compile tuple_exprs
            emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
    compile (AST.List {..}) = do
