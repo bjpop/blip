@@ -1,0 +1,8 @@
+blip assign_slice.py && python3.3 assign_slice.pyc
+<<<
+>>>
+[1, 88, 4, 5]
+[123, 2, 75, 4, 12]
+[6, 7, 8, 9, 10]
+>>>2
+>>>=0

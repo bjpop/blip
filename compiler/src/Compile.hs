@@ -757,6 +757,10 @@ compileAssignTo expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) = 
    compile $ left_op_arg expr
    GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
    emitCodeArg STORE_ATTR index
+compileAssignTo (SlicedExpr {..}) = do
+   compile slicee
+   compileSlices slices
+   emitCodeNoArg STORE_SUBSCR  
 compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ prettyText other
 
 compileDelete :: ExprSpan -> Compile ()
