@@ -1,0 +1,11 @@
+blip with.py && python3.3 with.pyc
+<<<
+>>>
+Entered context
+<class '__main__.C'>
+Exited context
+<class 'ZeroDivisionError'>
+division by zero
+caught ZeroDivisionError
+>>>2
+>>>=0

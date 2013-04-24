@@ -45,7 +45,7 @@
 module Compile (compileFile) where
 
 import Prelude hiding (mapM)
-import Desugar (desugarComprehension)
+import Desugar (desugarComprehension, desugarWith)
 import Utils 
    ( isPureExpr, isPyObjectExpr, mkAssignVar, mkIdent, mkList
    , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
@@ -403,6 +403,7 @@ instance Compilable StatementSpan where
          Class {} -> compileClass decorated_def decorated_decorators
          other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
    compile (Delete {..}) = mapM_ compileDelete del_exprs
+   compile stmt@(With {}) = compileWith $ desugarWith stmt
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
 
 instance Compilable ExprSpan where
@@ -786,6 +787,30 @@ compileDelete (SlicedExpr {..}) = do
    compileSlices slices
    emitCodeNoArg DELETE_SUBSCR  
 compileDelete other = error $ "delete of unexpected expression:\n" ++ prettyText other
+
+compileWith :: StatementSpan -> Compile ()
+compileWith stmt@(With {..}) = 
+   case with_context of
+      [(context, maybeAs)] -> do
+         blockLabel <- newLabel
+         finallyLabel <- newLabel
+         compile context
+         emitCodeArg SETUP_WITH finallyLabel
+         labelNextInstruction blockLabel
+         withFrameBlock FrameBlockFinallyTry $ do
+            case maybeAs of
+               -- Discard result from context.__enter__()
+               Nothing -> emitCodeNoArg POP_TOP
+               Just expr -> compileAssignTo expr
+            mapM_ compile with_body
+            emitCodeNoArg POP_BLOCK
+         _ <- compileConstantEmit Blip.None
+         labelNextInstruction finallyLabel
+         withFrameBlock FrameBlockFinallyEnd $ do
+            emitCodeNoArg WITH_CLEANUP
+            emitCodeNoArg END_FINALLY
+      _other -> error $ "compileWith applied to non desugared with statement: " ++ prettyText stmt 
+compileWith other = error $ "compileWith applied to non with statement: " ++ prettyText other
 
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected
