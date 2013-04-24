@@ -402,6 +402,7 @@ instance Compilable StatementSpan where
          Fun {} -> compileFun decorated_def decorated_decorators
          Class {} -> compileClass decorated_def decorated_decorators
          other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
+   compile (Delete {..}) = mapM_ compileDelete del_exprs
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
 
 instance Compilable ExprSpan where
@@ -738,9 +739,9 @@ compileAssignTo :: ExprSpan -> Compile ()
 compileAssignTo (Var {..}) = do
    varInfo <- lookupVar $ ident_string var_ident 
    emitWriteVar varInfo
-compileAssignTo (Subscript {..}) = do
-   compile subscriptee
-   compile subscript_expr
+compileAssignTo (Subscript {..}) = 
+   compile subscriptee >>
+   compile subscript_expr >>
    emitCodeNoArg STORE_SUBSCR
 -- XXX this can be optimised in places where the rhs is a
 -- manifest list or tuple, avoiding the building list/tuple
@@ -757,6 +758,30 @@ compileAssignTo expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) = 
    GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
    emitCodeArg STORE_ATTR index
 compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ prettyText other
+
+compileDelete :: ExprSpan -> Compile ()
+compileDelete (Var {..}) = do
+   varInfo <- lookupVar $ ident_string var_ident
+   case varInfo of
+      LocalVar index -> emitCodeArg DELETE_FAST index
+      CellVar index -> emitCodeArg DELETE_DEREF index
+      FreeVar index -> emitCodeArg DELETE_DEREF index
+      -- XXX we need to distinguish between Globals and Names 
+      GlobalVar index -> emitCodeArg DELETE_NAME index
+compileDelete (Subscript {..}) =
+   compile subscriptee >>
+   compile subscript_expr >>
+   emitCodeNoArg DELETE_SUBSCR
+compileDelete (AST.Paren {..}) = compileDelete paren_expr
+compileDelete (expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}})) = do
+   compile $ left_op_arg expr
+   GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+   emitCodeArg DELETE_ATTR index
+compileDelete (SlicedExpr {..}) = do
+   compile slicee
+   compileSlices slices
+   emitCodeNoArg DELETE_SUBSCR  
+compileDelete other = error $ "delete of unexpected expression:\n" ++ prettyText other
 
 -- Check for a docstring in the first statement of a function body.
 -- The first constant in the corresponding code object is inspected

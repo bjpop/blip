@@ -1,0 +1,10 @@
+blip del.py && python3.3 del.pyc
+<<<
+>>>
+Caught NameError
+[2, 3]
+Caught AttributeError
+Caught UnboundLocalError
+[1, 4, 5]
+>>>2
+>>>=0
