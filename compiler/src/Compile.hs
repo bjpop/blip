@@ -982,6 +982,7 @@ isComparison (GreaterThanEquals {}) = True
 isComparison (LessThanEquals {}) = True
 isComparison (NotEquals  {}) = True
 isComparison (In {}) = True
+isComparison (NotIn {}) = True
 isComparison (IsNot {}) = True
 isComparison (Is {}) = True
 isComparison _other = False

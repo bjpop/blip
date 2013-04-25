@@ -1,0 +1,9 @@
+blip notin.py && python3.3 notin.pyc
+<<<
+>>>
+False
+True
+False
+False
+>>>2
+>>>=0
