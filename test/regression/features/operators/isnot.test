@@ -1,0 +1,8 @@
+blip isnot.py && python3.3 isnot.pyc
+<<<
+>>>
+True
+False
+True
+>>>2
+>>>=0
