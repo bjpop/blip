@@ -1,0 +1,9 @@
+blip in.py && python3.3 in.pyc
+<<<
+>>>
+True
+False
+True
+False
+>>>2
+>>>=0

@@ -981,6 +981,7 @@ isComparison (Equality {}) = True
 isComparison (GreaterThanEquals {}) = True
 isComparison (LessThanEquals {}) = True
 isComparison (NotEquals  {}) = True
+isComparison (In {}) = True
 isComparison _other = False
 
 compileDot :: ExprSpan -> Compile ()
