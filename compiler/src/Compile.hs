@@ -45,11 +45,11 @@
 module Compile (compileFile) where
 
 import Prelude hiding (mapM)
-import Desugar (desugarComprehension, desugarWith)
+import Desugar (desugarComprehension, desugarWith, resultName)
 import Utils 
-   ( isPureExpr, isPyObjectExpr, mkAssignVar, mkIdent, mkList
+   ( isPureExpr, isPyObjectExpr, mkAssignVar, mkList
    , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
-   , mkSubscript )
+   , mkSubscript, mkReturn, mkYield )
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -81,7 +81,7 @@ import Language.Python.Common.AST as AST
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
    , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
-   , ParameterSpan, Parameter (..))
+   , ParameterSpan, Parameter (..) )
 import Language.Python.Common (prettyText)
 import Language.Python.Common.StringEscape (unescapeString)
 import System.FilePath ((<.>), takeBaseName)
@@ -403,7 +403,11 @@ instance Compilable StatementSpan where
          Class {} -> compileClass decorated_def decorated_decorators
          other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
    compile (Delete {..}) = mapM_ compileDelete del_exprs
-   compile stmt@(With {}) = compileWith $ desugarWith stmt
+   compile stmt@(With {..})
+      -- desugar with statements containing multiple contexts into nested
+      -- with statements containing single contexts
+      | length with_context > 1 = compileWith $ desugarWith stmt 
+      | otherwise = compileWith stmt
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
 
 instance Compilable ExprSpan where
@@ -455,18 +459,24 @@ instance Compilable ExprSpan where
          compile key
          emitCodeNoArg STORE_MAP
    compile (ListComp {..}) = do
-      let initStmt = mkAssignVar (mkIdent "$result") (mkList [])
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "append" expr
-      compileComprehension "<listcomp>" initStmt updater list_comprehension
+      let initStmt = [mkAssignVar resultName (mkList [])]
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "append" expr
+          returnStmt = [mkReturn $ mkVar $ resultName]
+      compileComprehension "<listcomp>" initStmt updater returnStmt list_comprehension
    compile (SetComp {..}) = do
-      let initStmt = mkAssignVar (mkIdent "$result") (mkSet [])
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ mkIdent "$result") "add" expr
-      compileComprehension "<setcomp>" initStmt updater set_comprehension
+      let initStmt = [mkAssignVar resultName (mkSet [])]
+          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "add" expr
+          returnStmt = [mkReturn $ mkVar $ resultName]
+      compileComprehension "<setcomp>" initStmt updater returnStmt set_comprehension
    compile (DictComp {..}) = do
-      let initStmt = mkAssignVar (mkIdent "$result") (mkDict [])
+      let initStmt = [mkAssignVar resultName (mkDict [])]
           updater = \(key, val) -> 
-             mkAssign (mkSubscript (mkVar $ mkIdent "$result") key) val
-      compileComprehension "<dictcomp>" initStmt updater dict_comprehension
+             mkAssign (mkSubscript (mkVar $ resultName) key) val
+          returnStmt = [mkReturn $ mkVar $ resultName]
+      compileComprehension "<dictcomp>" initStmt updater returnStmt dict_comprehension
+   compile (Generator {..}) = do
+      let updater = \expr -> mkStmtExpr $ mkYield expr
+      compileComprehension "<gencomp>" [] updater [] gen_comprehension
    compile (Yield { yield_expr = Nothing }) =
       compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    compile (Yield { yield_expr = Just expr }) =
@@ -846,9 +856,9 @@ compileGuard restLabel (expr, stmts) = do
 
 -- Desugar the comprehension into a zero-arity function (body) with
 -- a (possibly nested) for loop, then call the function.
-compileComprehension :: Identifier -> StatementSpan -> (a -> StatementSpan) -> ComprehensionSpan a -> Compile ()
-compileComprehension name initStmt updater comprehension = do
-   let desugaredComp = desugarComprehension initStmt updater comprehension 
+compileComprehension :: Identifier -> [StatementSpan] -> (a -> StatementSpan) -> [StatementSpan] -> ComprehensionSpan a -> Compile ()
+compileComprehension name initStmt updater returnStmt comprehension = do
+   let desugaredComp = desugarComprehension initStmt updater returnStmt comprehension 
    funObj <- nestedBlock (comprehension_annot comprehension) $ compile $ Body desugaredComp
    compileClosure name funObj 0
    emitCodeArg CALL_FUNCTION 0
@@ -1141,4 +1151,3 @@ maybeDumpAST ast = do
    ifDump DumpAST $ do
       liftIO $ putStrLn "Abstract Syntax Tree:"
       liftIO $ putStrLn $ show ast
-

@@ -16,7 +16,7 @@ module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
    , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet, mkDict
-   , mkSubscript )
+   , mkSubscript, mkYield )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -100,6 +100,9 @@ mkIdent str = Ident { ident_string = str, ident_annot = SpanEmpty }
 
 mkReturn :: ExprSpan -> StatementSpan
 mkReturn expr = Return { return_expr = Just expr, stmt_annot = SpanEmpty }
+
+mkYield :: ExprSpan -> ExprSpan
+mkYield expr = Yield { yield_expr = Just expr, expr_annot = SpanEmpty }
 
 mkVar :: IdentSpan -> ExprSpan
 mkVar ident = Var { var_ident = ident, expr_annot = SpanEmpty }

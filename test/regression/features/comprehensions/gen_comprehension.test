@@ -1,0 +1,10 @@
+blip gen_comprehension.py && python3.3 gen_comprehension.pyc
+<<<
+>>>
+<class 'generator'>
+6
+7
+7
+8
+>>>2
+>>>=0

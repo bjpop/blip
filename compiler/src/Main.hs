@@ -128,7 +128,8 @@ getMagicNumber args =
 
 getDumps :: Args ArgIndex -> Set.Set Dumpable 
 getDumps args
-   = getDump DumpScope args `Set.union` getDump DumpAST args
+   = getDump DumpScope args `Set.union` 
+     getDump DumpAST args
    where
    getDump :: Dumpable -> Args ArgIndex -> Set.Set Dumpable
    getDump dumpable args

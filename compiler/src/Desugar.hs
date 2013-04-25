@@ -18,23 +18,24 @@
 --
 -----------------------------------------------------------------------------
 
-module Desugar (desugarComprehension, desugarWith) where
+module Desugar (desugarComprehension, resultName, desugarWith) where
 
 import Prelude hiding (mapM)
-import Utils (mkVar, mkReturn, mkIdent)
+import Utils (mkIdent)
 import Language.Python.Common.AST as AST
    ( StatementSpan, Statement (..), ExprSpan, Comprehension (..)
    , ComprehensionSpan, CompFor (..), CompForSpan, CompIf (..), CompIfSpan
-   , CompIter (..), CompIterSpan) 
+   , CompIter (..), CompIterSpan, IdentSpan ) 
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Language.Python.Common (prettyText)
 
-desugarComprehension :: StatementSpan -> (a -> StatementSpan) -> ComprehensionSpan a -> [StatementSpan]
-desugarComprehension initStmt updater (Comprehension {..}) =
-   [ initStmt, forLoop, returnStmt ]  
+resultName :: IdentSpan 
+resultName = mkIdent "$result"
+
+desugarComprehension :: [StatementSpan] -> (a -> StatementSpan) -> [StatementSpan] -> ComprehensionSpan a -> [StatementSpan]
+desugarComprehension initStmt updater returnStmt (Comprehension {..}) =
+   initStmt ++ [forLoop] ++ returnStmt
    where
-   resultName = mkIdent "$result"
-   returnStmt = mkReturn $ mkVar $ resultName
    updateStmt = updater comprehension_expr
    forLoop = desugarCompFor updateStmt comprehension_for
 
