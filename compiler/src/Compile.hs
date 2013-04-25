@@ -81,7 +81,7 @@ import Language.Python.Common.AST as AST
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
    , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
-   , ParameterSpan, Parameter (..) )
+   , ParameterSpan, Parameter (..), RaiseExpr (..), RaiseExprSpan )
 import Language.Python.Common (prettyText)
 import Language.Python.Common.StringEscape (unescapeString)
 import System.FilePath ((<.>), takeBaseName)
@@ -408,6 +408,7 @@ instance Compilable StatementSpan where
       -- with statements containing single contexts
       | length with_context > 1 = compileWith $ desugarWith stmt 
       | otherwise = compileWith stmt
+   compile (Raise {..}) = compile raise_expr
    compile other = error $ "Unsupported statement:\n" ++ prettyText other
 
 instance Compilable ExprSpan where
@@ -568,6 +569,21 @@ instance Compilable ImportItemSpan where
                return asName
       varInfo <- lookupVar $ ident_string storeName
       emitWriteVar varInfo
+
+instance Compilable RaiseExprSpan where
+   type CompileResult RaiseExprSpan = ()
+   compile (RaiseV3 maybeRaiseArg) = do
+      n <- case maybeRaiseArg of
+              Nothing -> return 0
+              Just (raiseExpr, maybeFrom) -> do
+                 compile raiseExpr
+                 case maybeFrom of
+                    Nothing -> return 1
+                    Just fromExpr -> do
+                       compile fromExpr
+                       return 2
+      emitCodeArg RAISE_VARARGS n 
+   compile stmt@(RaiseV2 _) = error $ "Python version 2 raise statement encountered: " ++ prettyText stmt
 
 withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
 withDecorators decorators comp = do

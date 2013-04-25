@@ -1,0 +1,6 @@
+blip raise.py && python3.3 raise.pyc
+<<<
+>>>
+caught exception
+>>>2
+>>>=0
