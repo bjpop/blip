@@ -12,13 +12,17 @@
 --
 -----------------------------------------------------------------------------
 
-module Blip.Marshal (readPyc, writePyc, PycFile (..), PyObject (..)) where
+module Blip.Marshal
+   ( readPyc, writePyc, PycFile (..), PyObject (..), CodeObjectFlagMask
+   , co_optimized, co_newlocals, co_varargs, co_varkeywords
+   , co_nested, co_generator, co_nofree )
+   where
 
 import Blip.MarshalDouble (bytesToDouble, doubleToBytes)
 import Blip.Bytecode (decode, BytecodeSeq (..))
 import Blip.Pretty (Pretty (..), prettyList, prettyTuple)
 import Control.Applicative ((<$>), (<*>))
-import Data.Map as Map hiding (map, size)
+import Data.Map as Map hiding (map, size, empty)
 import Data.Word (Word8, Word32)
 import Control.Monad.Error (ErrorT (..), lift, replicateM)
 import System.IO (Handle)
@@ -27,10 +31,11 @@ import qualified Data.ByteString.Lazy as B
 import Data.ByteString.Lazy.UTF8 as UTF8 (toString, fromString) 
 import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8)
 import Data.Binary.Put (PutM, putWord32le, putLazyByteString, runPutM, putWord8)
+import Data.Bits ((.&.))
 import Data.Int (Int64)
 import Data.Char (chr, ord)
 import Text.PrettyPrint
-   (text, (<+>), ($$), (<>), Doc , vcat, int, equals, doubleQuotes)
+   (text, (<+>), ($$), (<>), Doc , vcat, int, equals, doubleQuotes, hsep, empty)
 
 data PycFile =
    PycFile
@@ -93,7 +98,7 @@ instance Pretty PyObject where
       text "kwonlyargcount =" <+> pretty kwonlyargcount $$
       text "nlocals =" <+> pretty nlocals $$
       text "stacksize =" <+> pretty stacksize $$
-      text "flags =" <+> pretty flags $$
+      text "flags =" <+> prettyFlags flags $$
       text "varnames =" <+> pretty varnames $$
       text "freevars =" <+> pretty freevars $$
       text "cellvars =" <+> pretty cellvars $$
@@ -389,3 +394,39 @@ runPutDataCheck comp =
    case runPutData comp of
       Left e -> fail e
       Right bs -> return bs
+
+-- masks for the code object flags
+type CodeObjectFlagMask = Word32
+
+co_optimized :: CodeObjectFlagMask
+co_optimized = 0x0001
+co_newlocals :: CodeObjectFlagMask 
+co_newlocals = 0x0002
+co_varargs :: CodeObjectFlagMask 
+co_varargs = 0x0004
+co_varkeywords :: CodeObjectFlagMask 
+co_varkeywords = 0x0008
+co_nested :: CodeObjectFlagMask 
+co_nested = 0x0010
+co_generator :: CodeObjectFlagMask 
+co_generator = 0x0020
+co_nofree :: CodeObjectFlagMask 
+co_nofree = 0x0040
+
+prettyFlags :: Word32 -> Doc
+prettyFlags bits = 
+   hsep $ map (uncurry showFlag) masks
+   where
+   checkFlag :: CodeObjectFlagMask -> Bool
+   checkFlag mask = (bits .&. mask) /= 0
+   showFlag :: CodeObjectFlagMask -> String -> Doc
+   showFlag mask name
+      | checkFlag mask = text name
+      | otherwise = empty
+   masks = [ (co_optimized, "CO_OPTIMIZED")
+           , (co_newlocals, "CO_NEWLOCALS")
+           , (co_varargs, "CO_VARARGS") 
+           , (co_varkeywords, "CO_VARKEYWORDS")
+           , (co_nested, "CO_NESTED") 
+           , (co_generator, "CO_GENERATOR") 
+           , (co_nofree, "CO_NOFREE") ]

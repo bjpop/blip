@@ -67,10 +67,10 @@ import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier, CodeObjectFlagMask
-   , FrameBlockInfo (..) )
+   , ScopeIdentifier, FrameBlockInfo (..) )
 import Scope (topScope, renderScope)
-import Blip.Marshal as Blip (writePyc, PycFile (..), PyObject (..))
+import Blip.Marshal as Blip
+   ( writePyc, PycFile (..), PyObject (..), co_generator )
 import Blip.Bytecode (Opcode (..), encode)
 import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
@@ -1142,34 +1142,3 @@ maybeDumpAST ast = do
       liftIO $ putStrLn "Abstract Syntax Tree:"
       liftIO $ putStrLn $ show ast
 
--- masks for the code object flags
-{-
-co_optimized :: CodeObjectFlagMask
-co_optimized = 0x0001
-co_newlocals :: CodeObjectFlagMask 
-co_newlocals = 0x0002
-co_varargs :: CodeObjectFlagMask 
-co_varargs = 0x0004
-co_varkeywords :: CodeObjectFlagMask 
-co_varkeywords = 0x0008
-co_nested :: CodeObjectFlagMask 
-co_nested = 0x0010
--}
-co_generator :: CodeObjectFlagMask 
-co_generator = 0x0020
-{-
-co_nofree :: CodeObjectFlagMask 
-co_nofree = 0x0040
-co_future_division :: CodeObjectFlagMask 
-co_future_division = 0x2000
-co_future_absolute_import :: CodeObjectFlagMask 
-co_future_absolute_import = 0x4000
-co_future_with_statement :: CodeObjectFlagMask 
-co_future_with_statement = 0x8000
-co_future_print_function :: CodeObjectFlagMask 
-co_future_print_function = 0x10000
-co_future_unicode_literals :: CodeObjectFlagMask 
-co_future_unicode_literals = 0x20000
-co_future_barry_as_bdfl :: CodeObjectFlagMask 
-co_future_barry_as_bdfl = 0x40000
--}

@@ -15,7 +15,7 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier, CodeObjectFlagMask, FrameBlockInfo (..)
+   , ScopeIdentifier, FrameBlockInfo (..)
    ) where
 
 import Data.Set (Set)
@@ -112,8 +112,6 @@ data BlockState = BlockState
    }
    deriving (Show)
 
-type CodeObjectFlagMask = Word32
-
 data FrameBlockInfo
    = FrameBlockLoop !Word16
    | FrameBlockExcept 
@@ -121,10 +119,3 @@ data FrameBlockInfo
    | FrameBlockFinallyEnd
    deriving (Eq, Show)
 
-{-
-data FrameBlockInfo
-   = FrameBlockInfo
-     { frameBlock_type :: !FrameBlock
-     , frameBlock_label :: !Word16 } 
-   deriving (Eq, Show)
--}

@@ -31,11 +31,11 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier, CodeObjectFlagMask 
+   , DefinitionScope (..), VarInfo (..), ScopeIdentifier
    , FrameBlockInfo (..))
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
-import Blip.Marshal (PyObject (..))
+import Blip.Marshal (PyObject (..), CodeObjectFlagMask)
 import Data.Word (Word16)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
