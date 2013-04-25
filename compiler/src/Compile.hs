@@ -903,14 +903,18 @@ constantToPyObject (AST.Strings {..}) =
    -- We assume the parser has correctly matched the quotes.
    -- Escaped characters such as \n \t are parsed as multiple characters
    -- and need to be converted back into single characters.
-   Blip.Unicode { unicode = concat $ map (unescapeString . stripQuotes) strings_strings }
+   Blip.Unicode { unicode = concat $ map normaliseString strings_strings }
    where
-   stripQuotes :: String -> String
-   stripQuotes ('\'':'\'':'\'':rest) = take (length rest - 3) rest
-   stripQuotes ('"':'"':'"':rest) = take (length rest - 3) rest
-   stripQuotes ('\'':rest) = init rest
-   stripQuotes ('"':rest) = init rest
-   stripQuotes other = error $ "bad literal string: " ++ other
+   normaliseString :: String -> String
+   normaliseString ('\'':'\'':'\'':rest) = unescapeString $ take (length rest - 3) rest
+   normaliseString ('"':'"':'"':rest) = unescapeString $ take (length rest - 3) rest
+   normaliseString ('r':'\'':'\'':'\'':rest) = take (length rest - 3) rest
+   normaliseString ('r':'"':'"':'"':rest) = take (length rest - 3) rest
+   normaliseString ('\'':rest) = unescapeString $ init rest
+   normaliseString ('"':rest) = unescapeString $ init rest
+   normaliseString ('r':'\'':rest) = init rest
+   normaliseString ('r':'"':rest) = init rest
+   normaliseString other = error $ "bad literal string: " ++ other
 constantToPyObject other =
    error $ "constantToPyObject applied to an unexpected expression: " ++ prettyText other
 

@@ -1,0 +1,8 @@
+blip raw_string.py && python3.3 raw_string.pyc
+<<<
+>>>
+hello \n world
+hello \n world
+hello \n world
+>>>2
+>>>=0
