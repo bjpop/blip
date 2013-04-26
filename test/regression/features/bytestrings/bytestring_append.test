@@ -1,0 +1,6 @@
+blip bytestring_append.py && python3.3 bytestring_append.pyc
+<<<
+>>>
+b'Hello World'
+>>>2
+>>>=0

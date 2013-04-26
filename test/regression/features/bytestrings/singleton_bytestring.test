@@ -1,0 +1,6 @@
+blip singleton_bytestring.py && python3.3 singleton_bytestring.pyc
+<<<
+>>>
+b'x'
+>>>2
+>>>=0

@@ -93,6 +93,7 @@ import System.IO (openFile, IOMode(..), hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
 import Data.Traversable as Traversable (mapM)
 import qualified Data.ByteString.Lazy as B (empty)
+import Data.ByteString.Lazy.UTF8 (fromString)
 import Data.List (intersperse)
 import Control.Monad (unless, forM_, when, replicateM_, foldM)
 import Control.Exception (try)
@@ -417,6 +418,8 @@ instance Compilable ExprSpan where
       varInfo <- lookupVar $ ident_string ident
       emitReadVar varInfo
    compile expr@(AST.Strings {}) =
+      compileConstantEmit $ constantToPyObject expr 
+   compile expr@(AST.ByteStrings {}) =
       compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.Int {}) =
       compileConstantEmit $ constantToPyObject expr
@@ -898,25 +901,30 @@ constantToPyObject (AST.Ellipsis {}) = Blip.Ellipsis
 constantToPyObject (AST.Tuple {..}) =
    Blip.Tuple { elements = map constantToPyObject tuple_exprs }
 constantToPyObject (AST.Strings {..}) =
-   -- The strings in the AST retain their original quote marks which
-   -- need to be removed, we have to remove single or triple quotes.
-   -- We assume the parser has correctly matched the quotes.
-   -- Escaped characters such as \n \t are parsed as multiple characters
-   -- and need to be converted back into single characters.
    Blip.Unicode { unicode = concat $ map normaliseString strings_strings }
-   where
-   normaliseString :: String -> String
-   normaliseString ('\'':'\'':'\'':rest) = unescapeString $ take (length rest - 3) rest
-   normaliseString ('"':'"':'"':rest) = unescapeString $ take (length rest - 3) rest
-   normaliseString ('r':'\'':'\'':'\'':rest) = take (length rest - 3) rest
-   normaliseString ('r':'"':'"':'"':rest) = take (length rest - 3) rest
-   normaliseString ('\'':rest) = unescapeString $ init rest
-   normaliseString ('"':rest) = unescapeString $ init rest
-   normaliseString ('r':'\'':rest) = init rest
-   normaliseString ('r':'"':rest) = init rest
-   normaliseString other = error $ "bad literal string: " ++ other
+constantToPyObject (AST.ByteStrings {..}) =
+   Blip.String { string = fromString $ concat $ map normaliseString byte_string_strings }
 constantToPyObject other =
    error $ "constantToPyObject applied to an unexpected expression: " ++ prettyText other
+
+-- The strings in the AST retain their original quote marks which
+-- need to be removed, we have to remove single or triple quotes.
+-- We assume the parser has correctly matched the quotes.
+-- Escaped characters such as \n \t are parsed as multiple characters
+-- and need to be converted back into single characters.
+normaliseString :: String -> String
+normaliseString ('r':'b':rest) = removeQuotes rest
+normaliseString ('b':'r':rest) = removeQuotes rest
+normaliseString ('b':rest) = unescapeString $ removeQuotes rest
+normaliseString ('r':rest) = removeQuotes rest
+normaliseString other = unescapeString $ removeQuotes other 
+
+removeQuotes :: String -> String
+removeQuotes ('\'':'\'':'\'':rest) = take (length rest - 3) rest
+removeQuotes ('"':'"':'"':rest) = take (length rest - 3) rest
+removeQuotes ('\'':rest) = init rest
+removeQuotes ('"':rest) = init rest
+removeQuotes other = error $ "bad literal string: " ++ other
 
 -- Compile the arguments to a function call and return the number
 -- of positional arguments, and the number of keyword arguments.

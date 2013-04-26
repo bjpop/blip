@@ -1,0 +1,6 @@
+print(br'hello \n world')
+print(br"hello \n world")
+print(br"""hello \n world""")
+print(rb'hello \n world')
+print(rb"hello \n world")
+print(rb"""hello \n world""")

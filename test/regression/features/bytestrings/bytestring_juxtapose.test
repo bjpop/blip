@@ -1,0 +1,6 @@
+blip bytestring_juxtapose.py && python3.3 bytestring_juxtapose.pyc
+<<<
+>>>
+b'Hello World'
+>>>2
+>>>=0

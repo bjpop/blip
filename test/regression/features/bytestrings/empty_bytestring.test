@@ -1,0 +1,8 @@
+blip empty_bytestring.py && python3.3 empty_bytestring.pyc
+<<<
+>>>
+b''
+b''
+b''
+>>>2
+>>>=0
