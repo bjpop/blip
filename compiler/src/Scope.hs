@@ -85,11 +85,13 @@ import Language.Python.Common.AST as AST
    , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
    , CompIfSpan )
+import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
 import Control.Monad.RWS.Strict (RWS, local, modify, ask, runRWS)
 import Text.PrettyPrint.HughesPJ as Pretty
-   (Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty, render)
+   ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), (<>), empty
+   , render, parens, comma, int )
 import Blip.Pretty (Pretty (..))
 import State (emptyVarSet)
 
@@ -99,14 +101,20 @@ type GlobalVars = VarSet
 type FreeVars = VarSet
 type EnclosingVars = VarSet
 
+instance Pretty ScopeIdentifier where
+   pretty (SpanCoLinear {..}) = parens (int span_row <> comma <> int span_start_column)
+   pretty (SpanMultiLine {..}) = parens (int span_start_row <> comma <> int span_start_column)
+   pretty (SpanPoint {..}) = parens (int span_row <> comma <> int span_column)
+   pretty (SpanEmpty) = text "no src location"
+
 instance Pretty NestedScope where
    pretty (NestedScope scope) =
       vcat $ map prettyLocalScope identsScopes
       where
       identsScopes = Map.toList scope
       prettyLocalScope :: (ScopeIdentifier, (String, DefinitionScope, NestedScope)) -> Doc
-      prettyLocalScope (_span, (identifier, defScope, nestedScope)) =
-         text identifier <+> text "->" $$ 
+      prettyLocalScope (span, (identifier, defScope, nestedScope)) =
+         text identifier <+> pretty span <+> text "->" $$ 
          nest 5 (pretty defScope $$ pretty nestedScope)
 
 instance Pretty DefinitionScope where
@@ -345,6 +353,9 @@ instance VarUsage StatementSpan where
    varUsage (Assign {..})
       = mempty { usage_assigned = assignTargets assign_to } `mappend`
         varUsage assign_expr
+   varUsage (AugmentedAssign {..})
+      = mempty { usage_assigned = assignTargets [aug_assign_to] } `mappend`
+        varUsage aug_assign_expr
    -- XXX decorators need handling
    varUsage (Decorated {..})
        = varUsage decorated_def
