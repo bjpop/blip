@@ -19,11 +19,12 @@ module State
    ( setBlockState, getBlockState, initBlockState, initState, modifyBlockState
    , emitCode, emitCodeNoArg, emitCodeArg, compileConstant
    , getFileName, newLabel, compileConstantEmit, labelNextInstruction
-   , getObjectName, setObjectName, getLabelMap, getGlobals
-   , getNestedScope, ifDump, emptyVarSet, emptyDefinitionScope
-   , lookupNestedScope, indexedVarSetKeys, lookupVar, lookupGlobalVar
-   , emitReadVar, emitWriteVar, lookupClosureVar, setFlag, pushFrameBlock
-   , popFrameBlock, peekFrameBlock, withFrameBlock )
+   , getObjectName, setObjectName, getLabelMap
+   , getNestedScope, ifDump, emptyVarSet, emptyLocalScope
+   , getLocalScope, indexedVarSetKeys, lookupNameVar
+   , emitReadVar, emitWriteVar, emitDeleteVar, lookupClosureVar, setFlag
+   , pushFrameBlock, popFrameBlock, peekFrameBlock, withFrameBlock 
+   , setFastLocals, setArgCount )
    where
 
 import Monad (Compile (..))
@@ -31,12 +32,12 @@ import Types
    (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
-   , DefinitionScope (..), VarInfo (..), ScopeIdentifier
-   , FrameBlockInfo (..))
+   , LocalScope (..), VarInfo (..), ScopeIdentifier
+   , FrameBlockInfo (..), Context (..))
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..), CodeObjectFlagMask)
-import Data.Word (Word16)
+import Data.Word (Word16, Word32)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
@@ -46,18 +47,18 @@ import Data.Bits ((.|.))
 emptyVarSet :: VarSet
 emptyVarSet = Set.empty
 
-emptyDefinitionScope :: DefinitionScope
-emptyDefinitionScope =
-   DefinitionScope
+emptyLocalScope :: LocalScope
+emptyLocalScope =
+   LocalScope
    { definitionScope_params = []
    , definitionScope_locals = emptyVarSet
    , definitionScope_freeVars = emptyVarSet
    , definitionScope_cellVars = emptyVarSet
-   , definitionScope_classLocals = emptyVarSet
+   , definitionScope_explicitGlobals = emptyVarSet
    }
 
-initBlockState :: DefinitionScope -> NestedScope -> BlockState
-initBlockState (DefinitionScope {..}) nestedScope = BlockState
+initBlockState :: Context -> LocalScope -> BlockState
+initBlockState context (LocalScope {..}) = BlockState
    { state_label = 0
    , state_instructions = []
    , state_labelNextInstruction = [] 
@@ -70,10 +71,11 @@ initBlockState (DefinitionScope {..}) nestedScope = BlockState
    , state_objectName = ""
    , state_instruction_index = 0
    , state_labelMap = Map.empty
-   , state_nestedScope = nestedScope
-   , state_locals = makeLocalsIndexedSet 
-                       definitionScope_params
-                       definitionScope_locals 
+   , state_locals = definitionScope_locals
+   , state_fastLocals =
+        if context == FunctionContext
+           then makeLocalsIndexedSet definitionScope_params definitionScope_locals 
+           else Map.empty
    -- the indices for cellvars and freevars are used as offsets into an array
    -- within the code object. The cellvars come first, followed by the
    -- freevars. These indices are used by the LOAD_DEREF and STORE_DEREF
@@ -84,10 +86,12 @@ initBlockState (DefinitionScope {..}) nestedScope = BlockState
    , state_freeVars = indexedVarSet
                          (fromIntegral $ Set.size definitionScope_cellVars) 
                          definitionScope_freeVars 
-   , state_classLocals = definitionScope_classLocals 
+   -- , state_classLocals = definitionScope_classLocals 
+   , state_explicitGlobals = definitionScope_explicitGlobals
    , state_argcount = fromIntegral $ length definitionScope_params
    , state_flags = 0
    , state_frameBlockStack = []
+   , state_context = context
    }
 
 -- Local variables are indexed starting with parameters first, in the order
@@ -113,12 +117,25 @@ incInstructionIndex bytecode = do
    modifyBlockState $ \s -> s { state_instruction_index = nextIndex }
    return currentIndex
 
-initState :: VarSet -> DefinitionScope -> NestedScope -> CompileConfig -> FilePath -> CompileState
-initState globals definitionScope nestedScope config pyFilename = CompileState
+setFastLocals :: [Identifier] -> Compile ()
+setFastLocals idents = do
+   let localsVarSet = Set.fromList idents
+   modifyBlockState $ \s -> s { state_fastLocals = indexedVarSet 0 localsVarSet }
+
+setArgCount :: Word32 -> Compile ()
+setArgCount n = modifyBlockState $ \s -> s { state_argcount = n }
+
+initState :: Context       -- module, class or function?
+          -> LocalScope    -- local scope of the top-level of the module
+          -> NestedScope   -- nested scope of the rest of the module (not at the top-level)
+          -> CompileConfig -- configuration options
+          -> FilePath      -- file path of the Python source
+          -> CompileState
+initState context localScope nestedScope config pyFilename = CompileState
    { state_config = config
-   , state_blockState = initBlockState definitionScope nestedScope
+   , state_blockState = initBlockState context localScope
    , state_filename = pyFilename
-   , state_globals = globals
+   , state_nestedScope = nestedScope
    }
 
 ifDump :: Dumpable -> Compile () -> Compile ()
@@ -128,15 +145,12 @@ ifDump dumpable action = do
       then action
       else return () 
 
-getGlobals :: Compile VarSet
-getGlobals = gets state_globals
-
 -- get the nested scope for the current block
 getNestedScope :: Compile NestedScope
-getNestedScope = getBlockState state_nestedScope
+getNestedScope = gets state_nestedScope
 
-lookupNestedScope :: ScopeIdentifier -> Compile (String, DefinitionScope, NestedScope)
-lookupNestedScope scopeIdent = do
+getLocalScope :: ScopeIdentifier -> Compile (String, LocalScope)
+getLocalScope scopeIdent = do
    NestedScope nestedScope <- getNestedScope
    case Map.lookup scopeIdent nestedScope of
       Just scope -> return scope
@@ -178,17 +192,93 @@ labelNextInstruction newLabel = do
    currentLabels <- getBlockState state_labelNextInstruction
    modifyBlockState $ \ s -> s { state_labelNextInstruction = newLabel : currentLabels }
 
-emitReadVar :: VarInfo -> Compile ()
-emitReadVar (LocalVar index) = emitCodeArg LOAD_FAST index
-emitReadVar (CellVar index) = emitCodeArg LOAD_DEREF index
-emitReadVar (FreeVar index) = emitCodeArg LOAD_DEREF index
-emitReadVar (GlobalVar index) = emitCodeArg LOAD_NAME index
+{-
+          | Free  | Cell  | Local | Explicit Global | Implicit Global
+---------------------------------------------------------------------
+Class     | Deref | X     | Name  | Global          | Name          
+Module    | X     | X     | Name  | X               | Name
+Funcition | Deref | Deref | Fast  | Global          | Global
 
-emitWriteVar :: VarInfo -> Compile ()
-emitWriteVar (LocalVar index) = emitCodeArg STORE_FAST index
-emitWriteVar (CellVar index) = emitCodeArg STORE_DEREF index
-emitWriteVar (FreeVar index) = emitCodeArg STORE_DEREF index
-emitWriteVar (GlobalVar index) = emitCodeArg STORE_NAME index
+-}
+
+data VarOpcodeType = Deref | Name | Global | Fast
+
+emitReadVar :: Identifier -> Compile ()
+emitReadVar ident = do
+   (opcodeType, index) <- getVarOpcodeType ident
+   case opcodeType of
+      Deref -> emitCodeArg LOAD_DEREF index
+      Name -> emitCodeArg LOAD_NAME index
+      Global -> emitCodeArg LOAD_GLOBAL index
+      Fast -> emitCodeArg LOAD_FAST index
+
+emitWriteVar :: Identifier -> Compile ()
+emitWriteVar ident = do
+   (opcodeType, index) <- getVarOpcodeType ident
+   case opcodeType of
+      Deref -> emitCodeArg STORE_DEREF index
+      Name -> emitCodeArg STORE_NAME index
+      Global -> emitCodeArg STORE_GLOBAL index
+      Fast -> emitCodeArg STORE_FAST index
+
+emitDeleteVar :: Identifier -> Compile ()
+emitDeleteVar ident = do
+   (opcodeType, index) <- getVarOpcodeType ident
+   case opcodeType of
+      Deref -> emitCodeArg DELETE_DEREF index
+      Name -> emitCodeArg DELETE_NAME index
+      Global -> emitCodeArg DELETE_GLOBAL index
+      Fast -> emitCodeArg DELETE_FAST index
+
+getVarOpcodeType :: Identifier -> Compile (VarOpcodeType, VarIndex)
+getVarOpcodeType ident = do
+   context <- getBlockState state_context
+   varInfo <- lookupVar ident
+   getVarInContext context varInfo
+   where
+   getVarInContext :: Context -> VarInfo -> Compile (VarOpcodeType, VarIndex)
+   getVarInContext ClassContext info =
+      case info of
+         FreeVar index -> return (Deref, index)
+         LocalVar -> do
+            index <- lookupNameVar ident
+            return (Name, index)
+         ExplicitGlobal -> do
+            index <- lookupNameVar ident
+            return (Global, index)
+         ImplicitGlobal -> do
+            index <- lookupNameVar ident
+            return (Name, index)
+         CellVar _index -> error $ "class with a cell variable: " ++ ident
+   getVarInContext ModuleContext info =
+      case info of
+         LocalVar -> do
+            index <- lookupNameVar ident
+            return (Name, index)
+         ImplicitGlobal -> do
+            index <- lookupNameVar ident
+            return (Name, index)
+         FreeVar _index ->
+            error $ "module with a free variable: " ++ ident
+         CellVar _index ->
+            error $ "module with a cell variable: " ++ ident
+         ExplicitGlobal ->
+            error $ "module with an explicit global variable: " ++ ident
+   getVarInContext FunctionContext info =
+      case info of
+         FreeVar index -> return (Deref, index)
+         CellVar index -> return (Deref, index)
+         LocalVar -> do
+            fastLocals <- getBlockState state_fastLocals 
+            case Map.lookup ident fastLocals of
+               Just index -> return (Fast, index)
+               Nothing -> error $ "local function variable not in fast locals: " ++ ident
+         ExplicitGlobal -> do
+            index <- lookupNameVar ident
+            return (Global, index)
+         ImplicitGlobal -> do
+            index <- lookupNameVar ident
+            return (Global, index)
 
 emitCodeArg :: Opcode -> Word16 -> Compile ()
 emitCodeArg opCode arg = emitCode $ Bytecode opCode (Just $ Arg16 arg)
@@ -257,38 +347,44 @@ check if var is:
 
   cellvar
   localvar
-  classLocal
   freevar
-  globalvar
+  explicit global
+  implicit global 
 
-in that order.
+We check local vars first before free vars because classes can
+have a variable with the same name being local and also free.
+If a local version of the variable is defined, that is the
+one we want to see (not the free variable). If we need to
+see the free variable, then we can look it up specially.
 
-We check cell vars first, because a cellvar is a special type of
-local var, so it must take preference.
-
-We check classLocal before freevar because classes can have a locally
-defined variable with the same name as a free variable.
+If we can't find it defined anywhere then we presume it
+to be an implicit global variable.
 
 -}
 
 lookupVar :: Identifier -> Compile VarInfo
 lookupVar identifier = do
+   -- cell
    cellvars <- getBlockState state_cellVars
    case Map.lookup identifier cellvars of
       Just index -> return $ CellVar index
       Nothing -> do
+         -- local
          locals <- getBlockState state_locals
-         case Map.lookup identifier locals of
-            Just index -> return $ LocalVar index
-            Nothing -> do
-               classLocals <- getBlockState state_classLocals
-               if identifier `Set.member` classLocals 
-                  then lookupGlobalVar identifier
-                  else do
-                     freevars <- getBlockState state_freeVars
-                     case Map.lookup identifier freevars of
-                        Just index -> return $ FreeVar index
-                        Nothing -> lookupGlobalVar identifier
+         if identifier `Set.member` locals
+            then return LocalVar
+            else do
+               -- free
+               freevars <- getBlockState state_freeVars
+               case Map.lookup identifier freevars of
+                  Just index -> return $ FreeVar index
+                  Nothing -> do
+                     -- explicit global
+                     explicitGlobals <- getBlockState state_explicitGlobals
+                     if identifier `Set.member` explicitGlobals
+                        then return ExplicitGlobal
+                        -- implicit global 
+                        else return ImplicitGlobal
 
 {- lookup a variable in cell vars or free vars only.
    We avoid looking in other places because, for example,
@@ -308,11 +404,10 @@ lookupClosureVar identifier = do
             Just index -> return $ Just $ FreeVar index
             Nothing -> return Nothing
 
--- references to globals are recorded in the "names" entry
--- in a code object.
--- XXX this should probably be called lookupNameVar
-lookupGlobalVar :: Identifier -> Compile VarInfo
-lookupGlobalVar ident = do
+-- look up a variable in the "names" vector. Add it if it is not there.
+-- return the index of the variable in the vector.
+lookupNameVar :: Identifier -> Compile VarIndex
+lookupNameVar ident = do
    blockState <- getBlockState id
    let nameCache = state_nameCache blockState
    case Map.lookup ident nameCache of
@@ -325,8 +420,8 @@ lookupGlobalVar ident = do
             blockState { state_nextNameID = index + 1
                        , state_nameCache = newNameCache 
                        , state_names = ident : oldNames }
-         return $ GlobalVar index 
-      Just index -> return $ GlobalVar index 
+         return index 
+      Just index -> return index 
 
 -- set a flag in the code object by applying a mask 
 setFlag :: CodeObjectFlagMask -> Compile ()

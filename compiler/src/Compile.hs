@@ -56,18 +56,18 @@ import State
    ( setBlockState, getBlockState, initBlockState, initState
    , emitCodeNoArg, emitCodeArg, compileConstantEmit
    , compileConstant, getFileName, newLabel, labelNextInstruction
-   , getObjectName, setObjectName, getGlobals
-   , getNestedScope, ifDump, emptyDefinitionScope, lookupNestedScope
-   , indexedVarSetKeys, lookupVar, emitReadVar, emitWriteVar
-   , lookupGlobalVar, lookupClosureVar, setFlag
-   , peekFrameBlock, withFrameBlock )
+   , getObjectName, setObjectName
+   , getNestedScope, ifDump, getLocalScope
+   , indexedVarSetKeys, emitReadVar, emitWriteVar, emitDeleteVar
+   , lookupNameVar, lookupClosureVar, setFlag
+   , peekFrameBlock, withFrameBlock, setFastLocals, setArgCount )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier, FrameBlockInfo (..) )
+   , ScopeIdentifier, FrameBlockInfo (..), Context (..) )
 import Scope (topScope, renderScope)
 import Blip.Marshal as Blip
    ( writePyc, PycFile (..), PyObject (..), co_generator )
@@ -117,10 +117,10 @@ compileFile config path = do
       -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
       let modSeconds = (0 :: Integer)
       pyModule <- parseAndCheckErrors fileContents path
-      let (globals, nestedScope) = topScope pyModule
+      let (moduleLocals, nestedScope) = topScope pyModule
       -- canonicalPath <- canonicalizePath path 
       canonicalPath <- return path 
-      let state = initState globals emptyDefinitionScope
+      let state = initState ModuleContext moduleLocals 
                      nestedScope config canonicalPath
       pyc <- compileModule state (fromIntegral modSeconds)
                 (fromIntegral sizeInBytes) pyModule
@@ -198,11 +198,11 @@ makeObject = do
    constants <- getBlockState state_constants
    freeVars <- getBlockState state_freeVars
    cellVars <- getBlockState state_cellVars
-   localVars <- getBlockState state_locals
    argcount <- getBlockState state_argcount
    flags <- getBlockState state_flags
+   fastLocals <- getBlockState state_fastLocals
    let code = map annotatedCode_bytecode annotatedCode 
-       localVarNames = map Unicode $ indexedVarSetKeys localVars
+       localVarNames = map Unicode $ indexedVarSetKeys fastLocals
        maxStackDepth = maxBound 
    if stackDepth > maxStackDepth
       -- XXX make a better error message
@@ -246,11 +246,11 @@ instance Compilable StatementSpan where
    compile (AugmentedAssign {..}) =
       case aug_assign_to of
          Var {..} -> do
-            varInfo <- lookupVar $ ident_string var_ident
-            emitReadVar varInfo
+            let varIdent = ident_string var_ident
+            emitReadVar varIdent
             compile aug_assign_expr
             compile aug_assign_op
-            emitWriteVar varInfo
+            emitWriteVar varIdent
          Subscript {..} -> do
             compile subscriptee
             compile subscript_expr
@@ -263,7 +263,7 @@ instance Compilable StatementSpan where
          expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
             compile $ left_op_arg expr
             emitCodeNoArg DUP_TOP
-            GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+            index <- lookupNameVar $ ident_string $ var_ident
             emitCodeArg LOAD_ATTR index 
             compile aug_assign_expr
             compile aug_assign_op
@@ -329,7 +329,7 @@ instance Compilable StatementSpan where
             compile test_expr
             end <- newLabel
             emitCodeArg POP_JUMP_IF_TRUE end
-            GlobalVar assertionErrorVar <- lookupGlobalVar "AssertionError"
+            assertionErrorVar <- lookupNameVar "AssertionError"
             emitCodeArg LOAD_GLOBAL assertionErrorVar
             case restAssertExprs of
                assertMsgExpr:_ -> do
@@ -364,13 +364,12 @@ instance Compilable StatementSpan where
             emitCodeNoArg IMPORT_STAR
          FromItems {..} -> do
             forM_ from_items_items $ \FromItem {..} -> do
-                GlobalVar index <- lookupGlobalVar $ ident_string from_item_name
+                index <- lookupNameVar $ ident_string from_item_name
                 emitCodeArg IMPORT_FROM index
                 let storeName = case from_as_name of
                        Nothing -> from_item_name
                        Just asName -> asName
-                varInfo <- lookupVar $ ident_string storeName
-                emitWriteVar varInfo
+                emitWriteVar $ ident_string storeName
             emitCodeNoArg POP_TOP
    -- XXX should check that we are inside a loop
    compile (Break {}) = emitCodeNoArg BREAK_LOOP
@@ -415,8 +414,7 @@ instance Compilable StatementSpan where
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
    compile (Var { var_ident = ident }) = do
-      varInfo <- lookupVar $ ident_string ident
-      emitReadVar varInfo
+      emitReadVar $ ident_string ident
    compile expr@(AST.Strings {}) =
       compileConstantEmit $ constantToPyObject expr 
    compile expr@(AST.ByteStrings {}) =
@@ -488,7 +486,6 @@ instance Compilable ExprSpan where
    -- XXX should handle keyword arguments etc.
    compile (Call {..}) = do
       compile call_fun
-      -- mapM compile call_args
       (numPosArgs, numKeyWordArgs) <- compileCallArgs call_args
       let opArg = numPosArgs .|. numKeyWordArgs `shiftL` 8
       emitCodeArg CALL_FUNCTION opArg 
@@ -500,7 +497,6 @@ instance Compilable ExprSpan where
       compile slicee
       compileSlices slices
       emitCodeNoArg BINARY_SUBSCR
-   -- XXX need to support operator chaining.
    compile exp@(BinaryOp {..})
       | isBoolean operator = compileBoolOpExpr exp
       | isComparison operator = compileCompareOpExpr exp
@@ -513,7 +509,7 @@ instance Compilable ExprSpan where
       compile op_arg
       compileUnaryOp operator
    compile (Lambda {..}) = do
-      funBodyObj <- nestedBlock expr_annot $ do
+      funBodyObj <- nestedBlock FunctionContext expr_annot $ do
          -- make the first constant None, to indicate no doc string
          -- for the lambda
          _ <- compileConstant Blip.None
@@ -538,10 +534,9 @@ instance Compilable DecoratorSpan where
           emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
       where
       compileDottedName (name:rest) = do
-         varInfo <- lookupVar $ ident_string name
-         emitReadVar varInfo
+         emitReadVar $ ident_string name
          forM_ rest $ \var -> do
-            GlobalVar index <- lookupGlobalVar $ ident_string var
+            index <- lookupNameVar $ ident_string var
             emitCodeArg LOAD_ATTR index
       compileDottedName [] =
          error $ "decorator with no name: " ++ prettyText dec
@@ -560,18 +555,17 @@ instance Compilable ImportItemSpan where
       -- assert (length dottedNames > 0)
       let dottedNameStr =
              concat $ intersperse "." dottedNames
-      GlobalVar index <- lookupGlobalVar dottedNameStr
+      index <- lookupNameVar dottedNameStr
       emitCodeArg IMPORT_NAME index
       storeName <- 
          case import_as_name of
             Nothing -> return $ head import_item_name
             Just asName -> do
                forM_ (tail dottedNames) $ \attribute -> do
-                  GlobalVar index <- lookupGlobalVar attribute
+                  index <- lookupNameVar attribute
                   emitCodeArg LOAD_ATTR index 
                return asName
-      varInfo <- lookupVar $ ident_string storeName
-      emitWriteVar varInfo
+      emitWriteVar $ ident_string storeName
 
 instance Compilable RaiseExprSpan where
    type CompileResult RaiseExprSpan = ()
@@ -598,14 +592,15 @@ withDecorators decorators comp = do
    replicateM_ (length decorators) $ 
       emitCodeArg CALL_FUNCTION 1
 
-nestedBlock :: ScopeIdentifier -> Compile a -> Compile a
-nestedBlock scopeIdent comp = do
+nestedBlock :: Context -> ScopeIdentifier -> Compile a -> Compile a
+nestedBlock context scopeIdent comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
-   (name, definitionScope, nestedScope) <- lookupNestedScope scopeIdent 
-   setBlockState $ initBlockState definitionScope nestedScope
+   (name, localScope) <- getLocalScope scopeIdent 
+   -- setBlockState $ initBlockState definitionScope nestedScope
+   setBlockState $ initBlockState context localScope
    -- set the new object name
    setObjectName name
    -- run the nested computation
@@ -619,13 +614,12 @@ compileFun :: StatementSpan -> [DecoratorSpan] -> Compile ()
 compileFun (Fun {..}) decorators = do
    let funName = ident_string $ fun_name
    withDecorators decorators $ do
-      funBodyObj <- nestedBlock stmt_annot $ do
+      funBodyObj <- nestedBlock FunctionContext stmt_annot $ do
          compileFunDocString fun_body
          compile $ Body fun_body
       numDefaults <- compileDefaultParams fun_args
       compileClosure funName funBodyObj numDefaults
-   varInfo <- lookupVar funName
-   emitWriteVar varInfo
+   emitWriteVar funName
 compileFun other _decorators = error $ "compileFun applied to a non function: " ++ prettyText other
 
 -- Compile a class definition, possibly with decorators.
@@ -633,16 +627,18 @@ compileClass :: StatementSpan -> [DecoratorSpan] -> Compile ()
 compileClass (Class {..}) decorators = do
    let className = ident_string $ class_name
    withDecorators decorators $ do
-      classBodyObj <- nestedBlock stmt_annot $ do
+      classBodyObj <- nestedBlock ClassContext stmt_annot $ do
+         -- classes have a special argument called __locals__
+         -- it is the only argument they have in the byte code, but it
+         -- does not come from the source code, so we have to add it.
+         setFastLocals ["__locals__"]
+         setArgCount 1
          emitCodeArg LOAD_FAST 0
          emitCodeNoArg STORE_LOCALS
-         varInfo <- lookupGlobalVar "__name__"
-         emitReadVar varInfo
-         varInfo <- lookupGlobalVar "__module__"
-         emitWriteVar varInfo
+         emitReadVar "__name__"
+         emitWriteVar "__module__"
          compileConstantEmit $ Unicode className
-         varInfo <- lookupGlobalVar "__qualname__"
-         emitWriteVar varInfo
+         emitWriteVar "__qualname__"
          compileClassModuleDocString class_body
          compile $ Body class_body
       emitCodeNoArg LOAD_BUILD_CLASS
@@ -650,8 +646,7 @@ compileClass (Class {..}) decorators = do
       compileConstantEmit $ Unicode className
       mapM_ compile class_args
       emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
-   varInfo <- lookupVar className
-   emitWriteVar varInfo
+   emitWriteVar className
 compileClass other _decorators = error $ "compileClass applied to a non class: " ++ prettyText other
 
 -- XXX CPython uses a "qualified" name for the code object. For instance
@@ -681,7 +676,7 @@ compileClosure name obj numDefaults = do
             case maybeVarInfo of
                Just (CellVar index) -> emitCodeArg LOAD_CLOSURE index
                Just (FreeVar index) -> emitCodeArg LOAD_CLOSURE index
-               _other -> error "closure free variable not cell or free var in outer context"
+               _other -> error $ name ++ " closure free variable not cell or free var in outer context: " ++ var
          emitCodeArg BUILD_TUPLE $ fromIntegral numFreeVars
          compileConstantEmit obj 
          compileConstantEmit $ Unicode name
@@ -723,7 +718,7 @@ compileFromModule (ImportRelative {..}) = do
              Nothing -> ""
              Just dottedNames ->
                 concat $ intersperse "." $ map ident_string dottedNames
-   GlobalVar index <- lookupGlobalVar moduleName 
+   index <- lookupNameVar moduleName 
    emitCodeArg IMPORT_NAME index
 
 fromItemsIdentifiers :: FromItemsSpan -> [Identifier]
@@ -766,9 +761,8 @@ compileAssignments (e1:e2:rest) = do
 -- we can assume that the parser has only accepted the appropriate
 -- subset of expression types
 compileAssignTo :: ExprSpan -> Compile ()
-compileAssignTo (Var {..}) = do
-   varInfo <- lookupVar $ ident_string var_ident 
-   emitWriteVar varInfo
+compileAssignTo (Var {..}) =
+   emitWriteVar $ ident_string var_ident
 compileAssignTo (Subscript {..}) = 
    compile subscriptee >>
    compile subscript_expr >>
@@ -785,7 +779,7 @@ compileAssignTo (AST.List {..}) = do
 compileAssignTo (AST.Paren {..}) = compileAssignTo paren_expr
 compileAssignTo expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) = do
    compile $ left_op_arg expr
-   GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+   index <- lookupNameVar $ ident_string $ var_ident
    emitCodeArg STORE_ATTR index
 compileAssignTo (SlicedExpr {..}) = do
    compile slicee
@@ -795,13 +789,7 @@ compileAssignTo other = error $ "assignment to unexpected expression:\n" ++ pret
 
 compileDelete :: ExprSpan -> Compile ()
 compileDelete (Var {..}) = do
-   varInfo <- lookupVar $ ident_string var_ident
-   case varInfo of
-      LocalVar index -> emitCodeArg DELETE_FAST index
-      CellVar index -> emitCodeArg DELETE_DEREF index
-      FreeVar index -> emitCodeArg DELETE_DEREF index
-      -- XXX we need to distinguish between Globals and Names 
-      GlobalVar index -> emitCodeArg DELETE_NAME index
+   emitDeleteVar $ ident_string var_ident
 compileDelete (Subscript {..}) =
    compile subscriptee >>
    compile subscript_expr >>
@@ -809,7 +797,7 @@ compileDelete (Subscript {..}) =
 compileDelete (AST.Paren {..}) = compileDelete paren_expr
 compileDelete (expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}})) = do
    compile $ left_op_arg expr
-   GlobalVar index <- lookupGlobalVar $ ident_string $ var_ident
+   index <- lookupNameVar $ ident_string $ var_ident
    emitCodeArg DELETE_ATTR index
 compileDelete (SlicedExpr {..}) = do
    compile slicee
@@ -857,9 +845,9 @@ compileClassModuleDocString :: [StatementSpan] -> Compile ()
 compileClassModuleDocString (firstStmt:_stmts)
    | StmtExpr {..} <- firstStmt,
      Strings {} <- stmt_expr
+        -- XXX what if another __doc__ is in scope?
         = do compileConstantEmit $ constantToPyObject stmt_expr
-             varInfo <- lookupGlobalVar "__doc__"
-             emitWriteVar varInfo
+             emitWriteVar "__doc__"
    | otherwise = return ()
 compileClassModuleDocString [] = return ()
 
@@ -878,7 +866,7 @@ compileGuard restLabel (expr, stmts) = do
 compileComprehension :: Identifier -> [StatementSpan] -> (a -> StatementSpan) -> [StatementSpan] -> ComprehensionSpan a -> Compile ()
 compileComprehension name initStmt updater returnStmt comprehension = do
    let desugaredComp = desugarComprehension initStmt updater returnStmt comprehension 
-   funObj <- nestedBlock (comprehension_annot comprehension) $ compile $ Body desugaredComp
+   funObj <- nestedBlock FunctionContext (comprehension_annot comprehension) $ compile $ Body desugaredComp
    compileClosure name funObj 0
    emitCodeArg CALL_FUNCTION 0
 
@@ -1004,8 +992,8 @@ compileDot (BinaryOp {..}) = do
    compile left_op_arg
    case right_op_arg of
       Var {..} -> do
-         -- the right argument should be treated like a global variable
-         GlobalVar varInfo <- lookupGlobalVar $ ident_string var_ident
+         -- the right argument should be treated like name variable
+         varInfo <- lookupNameVar $ ident_string var_ident
          emitCodeArg LOAD_ATTR varInfo 
       other -> error $ "right argument of dot operator not a variable:\n" ++ prettyText other
 compileDot other =
@@ -1154,7 +1142,6 @@ compileCompareOpExpr other = error $ "Unexpected comparison operator:\n" ++ pret
 
 data ChainItem = Comparator ExprSpan | Operator OpSpan
 
--- XXX this is buggy it the operator is not a comparison operator.
 flattenComparisonChain :: [ChainItem] -> ExprSpan -> [ChainItem] 
 flattenComparisonChain acc opExpr@(BinaryOp {..}) 
    | isComparison operator
@@ -1170,12 +1157,12 @@ returnNone = compileConstantEmit Blip.None >> emitCodeNoArg RETURN_VALUE
 
 -- Print out the variable scope of the module if requested on the command line.
 maybeDumpScope :: Compile ()
-maybeDumpScope = do
+maybeDumpScope = 
    ifDump DumpScope $ do
-      globals <- getGlobals
+      -- globals <- getGlobals
       nestedScope <- getNestedScope
-      liftIO $ putStrLn "Variable Scope:"
-      liftIO $ putStrLn $ renderScope (globals, nestedScope)
+      -- liftIO $ putStrLn "Variable Scope:"
+      liftIO $ putStrLn $ renderScope nestedScope
 
 -- Print out the AST of the module if requested on the command line.
 maybeDumpAST :: ModuleSpan -> Compile ()

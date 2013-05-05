@@ -14,8 +14,8 @@ module Types
    ( Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
-   , DefinitionScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier, FrameBlockInfo (..)
+   , LocalScope (..), NestedScope (..), VarInfo (..)
+   , ScopeIdentifier, FrameBlockInfo (..), Context (..)
    ) where
 
 import Data.Set (Set)
@@ -25,30 +25,40 @@ import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
 import Language.Python.Common.SrcLocation (SrcSpan)
 
+-- The context in which a variable is used affects the bytecode
+-- related to that use.
+data Context
+   = ModuleContext
+   | ClassContext
+   | FunctionContext
+   deriving (Eq, Ord, Show)
+
 -- information about how a variable is bound plus its offset into
 -- the appropriate structure
 data VarInfo
-   = LocalVar VarIndex 
+   = LocalVar
    | CellVar VarIndex 
    | FreeVar VarIndex 
-   | GlobalVar VarIndex
+   | ExplicitGlobal
+   | ImplicitGlobal
 
 type VarSet = Set Identifier
 
-data DefinitionScope
-   = DefinitionScope
+data LocalScope
+   = LocalScope
      { definitionScope_params :: ![Identifier]
      , definitionScope_locals :: !VarSet
      , definitionScope_freeVars :: !VarSet
      , definitionScope_cellVars :: !VarSet
-     , definitionScope_classLocals :: !VarSet
+     , definitionScope_explicitGlobals :: !VarSet
      }
      deriving Show
 
 type ScopeIdentifier = SrcSpan
 
-newtype NestedScope
-   = NestedScope (Map.Map ScopeIdentifier (String, DefinitionScope, NestedScope))
+-- mapping from source location to pair of (scope name, local scope)
+newtype NestedScope =
+   NestedScope (Map.Map ScopeIdentifier (String, LocalScope))
    deriving Show
 
 data Dumpable = DumpScope | DumpAST
@@ -77,7 +87,7 @@ data CompileState = CompileState
    { state_config :: CompileConfig
    , state_blockState :: BlockState
    , state_filename :: FilePath
-   , state_globals :: VarSet
+   , state_nestedScope :: NestedScope
    }
 
 -- Map from Label to Instruction offset.
@@ -101,14 +111,15 @@ data BlockState = BlockState
    , state_objectName :: String
    , state_instruction_index :: !Word16
    , state_labelMap :: LabelMap
-   , state_nestedScope :: NestedScope
-   , state_locals :: IndexedVarSet
+   , state_locals :: VarSet
+   , state_fastLocals :: IndexedVarSet
    , state_freeVars :: IndexedVarSet
    , state_cellVars :: IndexedVarSet
-   , state_classLocals :: VarSet
+   , state_explicitGlobals :: VarSet
    , state_argcount :: !Word32
    , state_flags :: !Word32
    , state_frameBlockStack :: [FrameBlockInfo]
+   , state_context :: !Context
    }
    deriving (Show)
 
@@ -118,4 +129,3 @@ data FrameBlockInfo
    | FrameBlockFinallyTry 
    | FrameBlockFinallyEnd
    deriving (Eq, Show)
-
