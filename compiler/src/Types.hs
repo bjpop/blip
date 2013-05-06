@@ -23,7 +23,7 @@ import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
-import Language.Python.Common.SrcLocation (SrcSpan)
+-- import Language.Python.Common.SrcLocation (SrcSpan)
 
 -- The context in which a variable is used affects the bytecode
 -- related to that use.
@@ -54,7 +54,8 @@ data LocalScope
      }
      deriving Show
 
-type ScopeIdentifier = SrcSpan
+-- start and end coordinates of span (row, col, row, col)
+type ScopeIdentifier = (Int, Int, Int, Int)
 
 -- mapping from source location to pair of (scope name, local scope)
 newtype NestedScope =

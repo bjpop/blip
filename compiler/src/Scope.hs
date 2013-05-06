@@ -45,7 +45,7 @@
 -- 
 -----------------------------------------------------------------------------
 
-module Scope (topScope, renderScope) where
+module Scope (topScope, renderScope, spanToScopeIdentifier) where
 
 import Types
    ( Identifier, VarSet, LocalScope (..)
@@ -54,7 +54,7 @@ import Data.Set as Set
    ( empty, singleton, fromList, union, unions, difference
    , intersection, toList, size )
 import Data.Map as Map (empty, insert, elems, toList, union)
-import Data.List (foldl')
+import Data.List (foldl', intersperse)
 import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
    , Argument (..), ArgumentSpan, RaiseExpr (..), RaiseExprSpan
@@ -67,18 +67,26 @@ import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
 import Control.Monad.Reader (Reader, local, ask, runReader)
 import Text.PrettyPrint.HughesPJ as Pretty
-   ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), (<>), empty
-   , render, parens, comma, int )
+   ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty
+   , render, parens, comma, int, hcat )
 import Blip.Pretty (Pretty (..))
 import State (emptyVarSet)
+
+spanToScopeIdentifier :: SrcSpan -> ScopeIdentifier
+spanToScopeIdentifier (SpanCoLinear {..})
+   = (span_row, span_start_column, span_row, span_end_column)
+spanToScopeIdentifier (SpanMultiLine {..})
+   = (span_start_row, span_start_column, span_end_row, span_end_column)
+spanToScopeIdentifier (SpanPoint {..})
+   = (span_row, span_column, span_row, span_column)
+spanToScopeIdentifier SpanEmpty
+   = error "empty source span for scope identifier"
 
 type ScopeM = Reader VarSet 
 
 instance Pretty ScopeIdentifier where
-   pretty (SpanCoLinear {..}) = parens (int span_row <> comma <> int span_start_column)
-   pretty (SpanMultiLine {..}) = parens (int span_start_row <> comma <> int span_start_column)
-   pretty (SpanPoint {..}) = parens (int span_row <> comma <> int span_column)
-   pretty (SpanEmpty) = text "no src location"
+   pretty (row1, col1, row2, col2) =
+      parens $ hcat $ intersperse comma $ map int [row1, col1, col2, row2]
 
 instance Pretty NestedScope where
    pretty (NestedScope scope) =
@@ -169,10 +177,10 @@ buildNestedScope nestedScope (DefStmt (Fun {..})) = do
    let usage = varUsage fun_args `mappend`
                varUsage fun_body `mappend`
                varUsage fun_result_annotation
-   functionNestedScope nestedScope usage stmt_annot $ fromIdentString fun_name
+   functionNestedScope nestedScope usage (spanToScopeIdentifier stmt_annot) $ fromIdentString fun_name
 buildNestedScope nestedScope (DefLambda (Lambda {..})) = do
    let usage = varUsage lambda_args `mappend` varUsage lambda_body
-   functionNestedScope nestedScope usage expr_annot "<lambda>" 
+   functionNestedScope nestedScope usage (spanToScopeIdentifier expr_annot) "<lambda>" 
 buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
    -- we introduce a new local variable called $result when compiling
    -- comprehensions, when they are desugared into functions
@@ -181,7 +189,7 @@ buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
                       , usage_referenced = resultVarSet } `mappend`
                varUsage comprehension_expr `mappend`
                varUsage comprehension_for
-   functionNestedScope nestedScope usage comprehension_annot "<comprehension>" 
+   functionNestedScope nestedScope usage (spanToScopeIdentifier comprehension_annot) "<comprehension>" 
 {-
    Classes can have freeVars, but they don't have cellVars.
 
@@ -226,7 +234,7 @@ buildNestedScope scope (DefStmt (Class {..})) = do
           , definitionScope_cellVars = Set.empty
           , definitionScope_explicitGlobals = usage_globals }
    let jointScope = joinNestedScopes scope thisNestedScope
-   return $ insertNestedScope stmt_annot
+   return $ insertNestedScope (spanToScopeIdentifier stmt_annot)
                (fromIdentString class_name, thisLocalScope)
                jointScope 
 

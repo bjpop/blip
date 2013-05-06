@@ -67,8 +67,8 @@ import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , ScopeIdentifier, FrameBlockInfo (..), Context (..) )
-import Scope (topScope, renderScope)
+   , FrameBlockInfo (..), Context (..) )
+import Scope (topScope, renderScope, spanToScopeIdentifier)
 import Blip.Marshal as Blip
    ( writePyc, PycFile (..), PyObject (..), co_generator )
 import Blip.Bytecode (Opcode (..), encode)
@@ -84,6 +84,7 @@ import Language.Python.Common.AST as AST
    , ParameterSpan, Parameter (..), RaiseExpr (..), RaiseExprSpan )
 import Language.Python.Common (prettyText)
 import Language.Python.Common.StringEscape (unescapeString)
+import Language.Python.Common.SrcLocation (SrcSpan (..))
 import System.FilePath ((<.>), takeBaseName)
 -- XXX Commented out to avoid bug in unix package when building on OS X, 
 -- The unix package is depended on by the directory package.
@@ -592,13 +593,13 @@ withDecorators decorators comp = do
    replicateM_ (length decorators) $ 
       emitCodeArg CALL_FUNCTION 1
 
-nestedBlock :: Context -> ScopeIdentifier -> Compile a -> Compile a
-nestedBlock context scopeIdent comp = do
+nestedBlock :: Context -> SrcSpan -> Compile a -> Compile a
+nestedBlock context span comp = do
    -- save the current block state
    oldBlockState <- getBlockState id
    -- set the new block state to initial values, and the
    -- scope of the current definition
-   (name, localScope) <- getLocalScope scopeIdent 
+   (name, localScope) <- getLocalScope $ spanToScopeIdentifier span 
    -- setBlockState $ initBlockState definitionScope nestedScope
    setBlockState $ initBlockState context localScope
    -- set the new object name
