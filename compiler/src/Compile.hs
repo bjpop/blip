@@ -24,7 +24,7 @@
 --    - The top-level of the module.
 --    - Function definitions (def and lambda).
 --    - Class definitions.
---    - Generators (not yet implemented).
+--    - Comprehensions.
 --
 -- The statements and expressions in each of the above constructs are
 -- recursively compiled into bytecode instructions. Initially, the actual
