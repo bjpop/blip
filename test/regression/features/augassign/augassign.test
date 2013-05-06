@@ -15,5 +15,6 @@ blip augassign.py && python3.3 augassign.pyc
 16
 2
 177
+[1, 2, 4, 5, 6, 3]
 >>>2
 >>>=0

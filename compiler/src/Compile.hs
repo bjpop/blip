@@ -261,6 +261,15 @@ instance Compilable StatementSpan where
             compile aug_assign_op
             emitCodeNoArg ROT_THREE
             emitCodeNoArg STORE_SUBSCR
+         SlicedExpr {..} -> do
+            compile slicee
+            compileSlices slices
+            emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
+            emitCodeNoArg BINARY_SUBSCR
+            compile aug_assign_expr
+            compile aug_assign_op
+            emitCodeNoArg ROT_THREE
+            emitCodeNoArg STORE_SUBSCR
          expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
             compile $ left_op_arg expr
             emitCodeNoArg DUP_TOP
