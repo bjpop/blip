@@ -86,7 +86,7 @@ type ScopeM = Reader VarSet
 
 instance Pretty ScopeIdentifier where
    pretty (row1, col1, row2, col2) =
-      parens $ hcat $ intersperse comma $ map int [row1, col1, col2, row2]
+      parens $ hcat $ intersperse comma $ map int [row1, col1, row2, col2]
 
 instance Pretty NestedScope where
    pretty (NestedScope scope) =
