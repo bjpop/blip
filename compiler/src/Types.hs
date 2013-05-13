@@ -15,7 +15,7 @@ module Types
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet
    , LocalScope (..), NestedScope (..), VarInfo (..)
-   , ScopeIdentifier, FrameBlockInfo (..), Context (..)
+   , ScopeIdentifier, FrameBlockInfo (..), Context (..), ParameterTypes (..)
    ) where
 
 import Data.Set (Set)
@@ -23,7 +23,6 @@ import Blip.Bytecode (Bytecode (..))
 import Blip.Marshal (PyObject (..))
 import Data.Word (Word32, Word16)
 import qualified Data.Map as Map
--- import Language.Python.Common.SrcLocation (SrcSpan)
 
 -- The context in which a variable is used affects the bytecode
 -- related to that use.
@@ -44,9 +43,18 @@ data VarInfo
 
 type VarSet = Set Identifier
 
+-- XXX need to handle keyword only paramters
+data ParameterTypes
+   = ParameterTypes
+     { parameterTypes_pos :: ![Identifier]
+     , parameterTypes_varPos :: !(Maybe Identifier)
+     , parameterTypes_varKeyword :: !(Maybe Identifier)
+     }
+   deriving (Eq, Show)
+
 data LocalScope
    = LocalScope
-     { definitionScope_params :: ![Identifier]
+     { definitionScope_params :: !ParameterTypes
      , definitionScope_locals :: !VarSet
      , definitionScope_freeVars :: !VarSet
      , definitionScope_cellVars :: !VarSet

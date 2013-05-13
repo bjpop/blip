@@ -191,6 +191,7 @@ instance Compilable Body where
 
 -- Build an object from all the state computed during compilation, such
 -- as the bytecode sequence, variable information and so on.
+-- argcount is the number of arguments, not counting *varargs or **kwargs.
 makeObject :: Compile PyObject
 makeObject = do
    annotatedCode <- getBlockState state_instructions
@@ -493,7 +494,6 @@ instance Compilable ExprSpan where
       compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    compile (Yield { yield_expr = Just expr }) =
       compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
-   -- XXX should handle keyword arguments etc.
    compile (Call {..}) = do
       compile call_fun
       (numPosArgs, numKeyWordArgs) <- compileCallArgs call_args
@@ -609,7 +609,6 @@ nestedBlock context span comp = do
    -- set the new block state to initial values, and the
    -- scope of the current definition
    (name, localScope) <- getLocalScope $ spanToScopeIdentifier span 
-   -- setBlockState $ initBlockState definitionScope nestedScope
    setBlockState $ initBlockState context localScope
    -- set the new object name
    setObjectName name

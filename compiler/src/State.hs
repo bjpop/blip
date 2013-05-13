@@ -24,33 +24,41 @@ module State
    , getLocalScope, indexedVarSetKeys, lookupNameVar
    , emitReadVar, emitWriteVar, emitDeleteVar, lookupClosureVar, setFlag
    , pushFrameBlock, popFrameBlock, peekFrameBlock, withFrameBlock 
-   , setFastLocals, setArgCount )
+   , setFastLocals, setArgCount, emptyParameterTypes )
    where
 
 import Monad (Compile (..))
 import Types
-   (Identifier, CompileConfig (..), VarIndex, IndexedVarSet
+   ( Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
    , LocalScope (..), VarInfo (..), ScopeIdentifier
-   , FrameBlockInfo (..), Context (..))
+   , FrameBlockInfo (..), Context (..), ParameterTypes (..) )
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
-import Blip.Marshal (PyObject (..), CodeObjectFlagMask)
+import Blip.Marshal (PyObject (..), CodeObjectFlagMask, co_varargs, co_varkeywords)
 import Data.Word (Word16, Word32)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
 import Data.List (sort)
 import Data.Bits ((.|.))
+import Utils (identsFromParameters, countPosParameters)
 
 emptyVarSet :: VarSet
 emptyVarSet = Set.empty
 
+emptyParameterTypes :: ParameterTypes
+emptyParameterTypes =
+   ParameterTypes { parameterTypes_pos = []
+                  , parameterTypes_varPos = Nothing
+                  , parameterTypes_varKeyword = Nothing
+                  }
+
 emptyLocalScope :: LocalScope
 emptyLocalScope =
    LocalScope
-   { definitionScope_params = []
+   { definitionScope_params = emptyParameterTypes 
    , definitionScope_locals = emptyVarSet
    , definitionScope_freeVars = emptyVarSet
    , definitionScope_cellVars = emptyVarSet
@@ -74,7 +82,8 @@ initBlockState context (LocalScope {..}) = BlockState
    , state_locals = definitionScope_locals
    , state_fastLocals =
         if context == FunctionContext
-           then makeLocalsIndexedSet definitionScope_params definitionScope_locals 
+           then makeLocalsIndexedSet (identsFromParameters definitionScope_params)
+                   definitionScope_locals 
            else Map.empty
    -- the indices for cellvars and freevars are used as offsets into an array
    -- within the code object. The cellvars come first, followed by the
@@ -86,13 +95,23 @@ initBlockState context (LocalScope {..}) = BlockState
    , state_freeVars = indexedVarSet
                          (fromIntegral $ Set.size definitionScope_cellVars) 
                          definitionScope_freeVars 
-   -- , state_classLocals = definitionScope_classLocals 
    , state_explicitGlobals = definitionScope_explicitGlobals
-   , state_argcount = fromIntegral $ length definitionScope_params
-   , state_flags = 0
+   , state_argcount = fromIntegral $ countPosParameters definitionScope_params
+   , state_flags = varArgsFlags definitionScope_params 0
    , state_frameBlockStack = []
    , state_context = context
    }
+
+varArgsFlags :: ParameterTypes -> Word32 -> Word32
+varArgsFlags (ParameterTypes {..}) flags =
+   flags .|. posVarArgsMask .|. keywordVarArgsMask
+   where
+   posVarArgsMask :: CodeObjectFlagMask
+   posVarArgsMask = 
+      maybe 0 (const co_varargs) parameterTypes_varPos
+   keywordVarArgsMask :: CodeObjectFlagMask
+   keywordVarArgsMask =
+      maybe 0 (const co_varkeywords) parameterTypes_varPos
 
 -- Local variables are indexed starting with parameters first, in the order
 -- that they appear in the function head, followed by the other

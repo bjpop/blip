@@ -45,11 +45,13 @@
 -- 
 -----------------------------------------------------------------------------
 
-module Scope (topScope, renderScope, spanToScopeIdentifier) where
+module Scope
+   (topScope, renderScope, spanToScopeIdentifier)
+   where
 
 import Types
    ( Identifier, VarSet, LocalScope (..)
-   , NestedScope (..), ScopeIdentifier )
+   , NestedScope (..), ScopeIdentifier, ParameterTypes (..) )
 import Data.Set as Set
    ( empty, singleton, fromList, union, unions, difference
    , intersection, toList, size )
@@ -62,7 +64,6 @@ import Language.Python.Common.AST as AST
    , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
    , CompIfSpan )
-import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
 import Control.Monad.Reader (Reader, local, ask, runReader)
@@ -70,17 +71,9 @@ import Text.PrettyPrint.HughesPJ as Pretty
    ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty
    , render, parens, comma, int, hcat )
 import Blip.Pretty (Pretty (..))
-import State (emptyVarSet)
-
-spanToScopeIdentifier :: SrcSpan -> ScopeIdentifier
-spanToScopeIdentifier (SpanCoLinear {..})
-   = (span_row, span_start_column, span_row, span_end_column)
-spanToScopeIdentifier (SpanMultiLine {..})
-   = (span_start_row, span_start_column, span_end_row, span_end_column)
-spanToScopeIdentifier (SpanPoint {..})
-   = (span_row, span_column, span_row, span_column)
-spanToScopeIdentifier SpanEmpty
-   = error "empty source span for scope identifier"
+import State (emptyVarSet, emptyParameterTypes)
+import Utils ( identsFromParameters, spanToScopeIdentifier
+             , fromIdentString, maybeToList )
 
 type ScopeM = Reader VarSet 
 
@@ -100,11 +93,17 @@ instance Pretty NestedScope where
 
 instance Pretty LocalScope where
    pretty (LocalScope {..}) =
-      prettyVarList "params:" definitionScope_params $$
+      text "params:" <+> (nest 5 $ pretty definitionScope_params) $$
       prettyVarSet "locals:" definitionScope_locals $$
       prettyVarSet "freevars:" definitionScope_freeVars $$
       prettyVarSet "cellvars:" definitionScope_cellVars $$
       prettyVarSet "globals:" definitionScope_explicitGlobals
+
+instance Pretty ParameterTypes where
+   pretty (ParameterTypes {..}) =
+      prettyVarList "positional:" parameterTypes_pos $$
+      prettyVarList "varArgPos:" (maybeToList parameterTypes_varPos) $$
+      prettyVarList "varArgKeyword:" (maybeToList parameterTypes_varKeyword)
 
 prettyVarList :: String -> [Identifier] -> Doc
 prettyVarList label list 
@@ -135,8 +134,7 @@ data Definition
 
 data Usage =
    Usage
-   { usage_params :: ![Identifier] -- variables which are parameters to the function
-   , usage_assigned :: !VarSet     -- variables assigned to (written to) in this scope
+   { usage_assigned :: !VarSet     -- variables assigned to (written to) in this scope
    , usage_nonlocals :: !VarSet    -- variables declared nonlocal in this scope
    , usage_globals :: !VarSet      -- variables declared global in this scope
    , usage_referenced :: !VarSet   -- variables referred to (read from) in this scope
@@ -156,7 +154,7 @@ topScope (Module suite) =
    -- XXX should check that nothing was declared global at the top level
    moduleLocals =
       LocalScope
-      { definitionScope_params = [] 
+      { definitionScope_params = emptyParameterTypes
       , definitionScope_locals = usage_assigned
       , definitionScope_freeVars = Set.empty
       , definitionScope_cellVars = Set.empty
@@ -174,13 +172,16 @@ joinNestedScopes (NestedScope scope1) (NestedScope scope2)
 
 buildNestedScope :: NestedScope -> Definition -> ScopeM NestedScope
 buildNestedScope nestedScope (DefStmt (Fun {..})) = do
-   let usage = varUsage fun_args `mappend`
-               varUsage fun_body `mappend`
+   let usage = varUsage fun_body `mappend`
                varUsage fun_result_annotation
-   functionNestedScope nestedScope usage (spanToScopeIdentifier stmt_annot) $ fromIdentString fun_name
+       parameterTypes = parseParameterTypes fun_args
+   functionNestedScope nestedScope usage parameterTypes
+      (spanToScopeIdentifier stmt_annot) $ fromIdentString fun_name
 buildNestedScope nestedScope (DefLambda (Lambda {..})) = do
-   let usage = varUsage lambda_args `mappend` varUsage lambda_body
-   functionNestedScope nestedScope usage (spanToScopeIdentifier expr_annot) "<lambda>" 
+   let usage = varUsage lambda_body
+       parameterTypes = parseParameterTypes lambda_args
+   functionNestedScope nestedScope usage parameterTypes
+      (spanToScopeIdentifier expr_annot) "<lambda>" 
 buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
    -- we introduce a new local variable called $result when compiling
    -- comprehensions, when they are desugared into functions
@@ -189,7 +190,8 @@ buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
                       , usage_referenced = resultVarSet } `mappend`
                varUsage comprehension_expr `mappend`
                varUsage comprehension_for
-   functionNestedScope nestedScope usage (spanToScopeIdentifier comprehension_annot) "<comprehension>" 
+   functionNestedScope nestedScope usage emptyParameterTypes
+      (spanToScopeIdentifier comprehension_annot) "<comprehension>" 
 {-
    Classes can have freeVars, but they don't have cellVars.
 
@@ -228,7 +230,7 @@ buildNestedScope scope (DefStmt (Class {..})) = do
        freeVars = directFreeVars `Set.union` nestedFreeVars
    let thisLocalScope =
           LocalScope
-          { definitionScope_params = [] 
+          { definitionScope_params = emptyParameterTypes
           , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = Set.empty
@@ -238,13 +240,20 @@ buildNestedScope scope (DefStmt (Class {..})) = do
                (fromIdentString class_name, thisLocalScope)
                jointScope 
 
-buildNestedScope _nestedScope _def = error $ "buildNestedScope called on unexpected definition"
+buildNestedScope _nestedScope _def =
+   error $ "buildNestedScope called on unexpected definition"
 
-functionNestedScope :: NestedScope -> Usage -> ScopeIdentifier -> String -> ScopeM NestedScope
-functionNestedScope scope (Usage {..}) scopeIdentifier name = do
+functionNestedScope :: NestedScope
+                    -> Usage 
+                    -> ParameterTypes 
+                    -> ScopeIdentifier 
+                    -> String 
+                    -> ScopeM NestedScope
+functionNestedScope scope (Usage {..}) parameters scopeIdentifier name = do
    let locals = (usage_assigned `Set.difference` 
                  usage_globals `Set.difference`
-                 usage_nonlocals) `Set.union` (Set.fromList usage_params)
+                 usage_nonlocals) `Set.union` 
+                 (Set.fromList $ identsFromParameters parameters)
    -- It is important to build the nested scope into an empty one, so we can collect
    -- all and only the free variables from it.
    thisNestedScope <- local (Set.union locals) $
@@ -267,7 +276,7 @@ functionNestedScope scope (Usage {..}) scopeIdentifier name = do
        freeVars = directFreeVars `Set.union` indirectFreeVars
        thisLocalScope =
           LocalScope
-          { definitionScope_params = usage_params
+          { definitionScope_params = parameters 
           , definitionScope_locals = locals
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = cellVars
@@ -276,6 +285,23 @@ functionNestedScope scope (Usage {..}) scopeIdentifier name = do
    return $ insertNestedScope scopeIdentifier 
                (name, thisLocalScope)
                jointScope
+
+-- separate the positional parameters from the positional varargs and the
+-- keyword varargs
+parseParameterTypes :: [ParameterSpan] -> ParameterTypes
+parseParameterTypes = parseAcc [] Nothing Nothing
+   where
+   parseAcc :: [Identifier] -> Maybe Identifier -> Maybe Identifier -> [ParameterSpan] -> ParameterTypes
+   parseAcc pos varPos varKeyword [] =
+      ParameterTypes { parameterTypes_pos = reverse pos
+                     , parameterTypes_varPos = varPos
+                     , parameterTypes_varKeyword = varKeyword }
+   parseAcc pos varPos varKeyword (param:rest) =
+      case param of
+         Param {..} -> parseAcc (fromIdentString param_name : pos) varPos varKeyword rest 
+         VarArgsPos {..} -> parseAcc pos (Just $ fromIdentString param_name) varKeyword rest
+         VarArgsKeyword {..} -> parseAcc pos varPos (Just $ fromIdentString param_name) rest
+         _other -> parseAcc pos varPos varKeyword rest
 
 -- Get all the free variables from all the identifiers at the top level
 -- of the nested scope.
@@ -289,23 +315,32 @@ nestedScopeFreeVars (NestedScope scope)
 
 instance Monoid Usage where
    mempty = Usage
-               { usage_params = [] 
-               , usage_assigned = Set.empty
+               { usage_assigned = Set.empty
                , usage_nonlocals = Set.empty
                , usage_globals = Set.empty
                , usage_referenced = Set.empty
                , usage_definitions = [] }
    mappend x y
       = Usage
-        { usage_params = usage_params x `mappend` usage_params y
-        , usage_assigned = usage_assigned x `mappend` usage_assigned y
+        { usage_assigned = usage_assigned x `mappend` usage_assigned y
         , usage_nonlocals = usage_nonlocals x `mappend` usage_nonlocals y
         , usage_referenced = usage_referenced x `mappend` usage_referenced y
         , usage_globals = usage_globals x `mappend` usage_globals y
         , usage_definitions = usage_definitions x `mappend` usage_definitions y }
 
-fromIdentString :: AST.Ident a -> Identifier
-fromIdentString (Ident {..}) = ident_string
+instance Monoid ParameterTypes where
+   mempty =
+      ParameterTypes
+      { parameterTypes_pos = []
+      , parameterTypes_varPos = Nothing
+      , parameterTypes_varKeyword = Nothing
+      }
+
+   mappend (ParameterTypes pos1 varPos1 varKeyword1)
+           (ParameterTypes pos2 varPos2 varKeyword2)
+      = ParameterTypes (pos1 `mappend` pos2)
+                       (varPos1 `mappend` varPos2)
+                       (varKeyword1 `mappend` varKeyword2)
 
 -- determine the set of variables which are either assigned to or explicitly
 -- declared global or nonlocal in the current scope.
@@ -428,19 +463,6 @@ instance VarUsage SliceSpan where
       varUsage slice_stride
    varUsage (SliceExpr {..}) = varUsage slice_expr
    varUsage (SliceEllipsis {}) = mempty
-
-instance VarUsage (ParameterSpan) where
-   varUsage (Param {..}) = 
-      mempty { usage_params = [fromIdentString param_name] } `mappend`
-      varUsage param_py_annotation `mappend`
-      varUsage param_default
-   varUsage (VarArgsPos {..}) =
-      mempty { usage_params = [fromIdentString param_name] } `mappend`
-      varUsage param_py_annotation
-   varUsage (VarArgsKeyword {..}) =
-      mempty { usage_params = [fromIdentString param_name] } `mappend`
-      varUsage param_py_annotation
-   varUsage _other = mempty 
 
 instance VarUsage a => VarUsage (ComprehensionSpan a) where
    varUsage (Comprehension {..}) = 

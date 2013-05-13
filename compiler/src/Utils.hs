@@ -15,8 +15,9 @@
 module Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
-   , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet, mkDict
-   , mkSubscript, mkYield )
+   , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet
+   , mkDict , mkSubscript, mkYield, identsFromParameters
+   , spanToScopeIdentifier, fromIdentString, countPosParameters, maybeToList )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -24,6 +25,50 @@ import Language.Python.Common.AST as AST
    ( ExprSpan, Expr (..), Statement (..), StatementSpan, Ident (..)
    , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
 import Language.Python.Common.SrcLocation (SrcSpan (..))
+import Types (Identifier, ScopeIdentifier, ParameterTypes (..))
+
+maybeToList :: Maybe a -> [a]
+maybeToList Nothing = []
+maybeToList (Just x) = [x]
+
+fromIdentString :: AST.Ident a -> Identifier
+fromIdentString (Ident {..}) = ident_string
+
+spanToScopeIdentifier :: SrcSpan -> ScopeIdentifier
+spanToScopeIdentifier (SpanCoLinear {..})
+   = (span_row, span_start_column, span_row, span_end_column)
+spanToScopeIdentifier (SpanMultiLine {..})
+   = (span_start_row, span_start_column, span_end_row, span_end_column)
+spanToScopeIdentifier (SpanPoint {..})
+   = (span_row, span_column, span_row, span_column)
+spanToScopeIdentifier SpanEmpty
+   = error "empty source span for scope identifier"
+
+identsFromParameters :: ParameterTypes -> [Identifier]
+identsFromParameters (ParameterTypes {..}) =
+   parameterTypes_pos ++ maybeToList parameterTypes_varPos ++
+   maybeToList parameterTypes_varKeyword
+{-
+identsFromParameters :: [ParameterSpan] -> [Identifier]
+identsFromParameters = concatMap getIdent
+   where
+   getIdent :: ParameterSpan -> [Identifier]
+   getIdent (Param {..}) = [fromIdentString $ param_name]
+   getIdent (VarArgsPos {..}) = [fromIdentString $ param_name]
+   getIdent (VarArgsKeyword {..}) = [fromIdentString $ param_name]
+   getIdent _other = []
+-}
+
+countPosParameters :: ParameterTypes -> Int
+countPosParameters (ParameterTypes {..}) = length parameterTypes_pos
+{-
+countPosParameters :: [ParameterSpan] -> Int
+countPosParameters = length . filter isPosParameter
+   where
+   isPosParameter :: ParameterSpan -> Bool
+   isPosParameter (Param {}) = True
+   isPosParameter _other = False 
+-}
 
 -- True if an expression can be represented directly as a PyObject constant.
 isPyObjectExpr :: ExprSpan -> Bool
