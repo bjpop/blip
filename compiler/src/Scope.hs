@@ -65,7 +65,7 @@ import Language.Python.Common.AST as AST
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
    , CompIfSpan )
 import Data.Monoid (Monoid (..))
-import Control.Monad (foldM)
+import Control.Monad (mapAndUnzipM)
 import Control.Monad.Reader (ReaderT, local, ask, runReaderT)
 import Text.PrettyPrint.HughesPJ as Pretty
    ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty
@@ -157,7 +157,7 @@ topScope (Module suite) = do
           , definitionScope_freeVars = Set.empty
           , definitionScope_cellVars = Set.empty
           , definitionScope_explicitGlobals = Set.empty }
-   nested <- runReaderT (foldM buildNestedScope emptyNestedScope usage_definitions) emptyVarSet
+   (nested, _freeVars) <- runReaderT (foldNestedScopes usage_definitions) emptyVarSet
    return (moduleLocals, nested)
 
 insertNestedScope :: ScopeIdentifier -> (String, LocalScope) -> NestedScope -> NestedScope
@@ -168,19 +168,29 @@ joinNestedScopes :: NestedScope -> NestedScope -> NestedScope
 joinNestedScopes (NestedScope scope1) (NestedScope scope2)
    = NestedScope $ Map.union scope1 scope2
 
-buildNestedScope :: NestedScope -> Definition -> ScopeM NestedScope
-buildNestedScope nestedScope (DefStmt (Fun {..})) = do
+joinVarSets :: VarSet -> VarSet -> VarSet
+joinVarSets = Set.union
+
+foldNestedScopes :: [Definition] -> ScopeM (NestedScope, VarSet)
+foldNestedScopes defs = do
+   (scopes, vars) <- mapAndUnzipM buildNestedScope defs
+   let joinedScopes = foldl' joinNestedScopes emptyNestedScope scopes
+       joinedVars = foldl' joinVarSets emptyVarSet vars
+   seq joinedScopes $ seq joinedVars $ return (joinedScopes, joinedVars)
+
+buildNestedScope :: Definition -> ScopeM (NestedScope, VarSet)
+buildNestedScope (DefStmt (Fun {..})) = do
    let usage = varUsage fun_body `mappend`
                varUsage fun_result_annotation
        parameterTypes = parseParameterTypes fun_args
-   functionNestedScope nestedScope usage parameterTypes
+   functionNestedScope usage parameterTypes
       (spanToScopeIdentifier stmt_annot) $ fromIdentString fun_name
-buildNestedScope nestedScope (DefLambda (Lambda {..})) = do
+buildNestedScope (DefLambda (Lambda {..})) = do
    let usage = varUsage lambda_body
        parameterTypes = parseParameterTypes lambda_args
-   functionNestedScope nestedScope usage parameterTypes
+   functionNestedScope usage parameterTypes
       (spanToScopeIdentifier expr_annot) "<lambda>" 
-buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
+buildNestedScope (DefComprehension (Comprehension {..})) = do
    -- we introduce a new local variable called $result when compiling
    -- comprehensions, when they are desugared into functions
    let resultVarSet = Set.singleton "$result"
@@ -188,7 +198,7 @@ buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
                       , usage_referenced = resultVarSet } `mappend`
                varUsage comprehension_expr `mappend`
                varUsage comprehension_for
-   functionNestedScope nestedScope usage emptyParameterTypes
+   functionNestedScope usage emptyParameterTypes
       (spanToScopeIdentifier comprehension_annot) "<comprehension>" 
 {-
    Classes can have freeVars, but they don't have cellVars.
@@ -214,15 +224,12 @@ buildNestedScope nestedScope (DefComprehension (Comprehension {..})) = do
    when the variables are looked-up in the scope during compilation.
 -}
 
-buildNestedScope scope (DefStmt (Class {..})) = do
+buildNestedScope (DefStmt (Class {..})) = do
    let Usage {..} = varUsage class_body 
        locals = usage_assigned
-   -- It is important to build the nested scope into an empty one, so we can collect
-   -- all and only the free variables from it.
-   thisNestedScope <- foldM buildNestedScope emptyNestedScope usage_definitions
+   (thisNestedScope, nestedFreeVars) <- foldNestedScopes usage_definitions
    enclosingScope <- ask
-   let nestedFreeVars = nestedScopeFreeVars thisNestedScope
-       directFreeVars 
+   let directFreeVars 
           = ((usage_referenced `Set.difference` locals) `Set.union`
               usage_nonlocals) `Set.intersection` enclosingScope
        freeVars = directFreeVars `Set.union` nestedFreeVars
@@ -233,33 +240,30 @@ buildNestedScope scope (DefStmt (Class {..})) = do
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = Set.empty
           , definitionScope_explicitGlobals = usage_globals }
-   let jointScope = joinNestedScopes scope thisNestedScope
-   return $ insertNestedScope (spanToScopeIdentifier stmt_annot)
-               (fromIdentString class_name, thisLocalScope)
-               jointScope 
+   let newScope =
+          insertNestedScope (spanToScopeIdentifier stmt_annot)
+             (fromIdentString class_name, thisLocalScope)
+             thisNestedScope
+   return (newScope, freeVars)
 
-buildNestedScope _nestedScope _def =
+buildNestedScope _def =
    error $ "buildNestedScope called on unexpected definition"
 
-functionNestedScope :: NestedScope
-                    -> Usage 
+functionNestedScope :: Usage 
                     -> ParameterTypes 
                     -> ScopeIdentifier 
                     -> String 
-                    -> ScopeM NestedScope
-functionNestedScope scope (Usage {..}) parameters scopeIdentifier name = do
+                    -> ScopeM (NestedScope, VarSet)
+functionNestedScope (Usage {..}) parameters scopeIdentifier name = do
    let locals = (usage_assigned `Set.difference` 
                  usage_globals `Set.difference`
                  usage_nonlocals) `Set.union` 
                  (Set.fromList $ identsFromParameters parameters)
-   -- It is important to build the nested scope into an empty one, so we can collect
-   -- all and only the free variables from it.
-   thisNestedScope <- local (Set.union locals) $
-         foldM buildNestedScope emptyNestedScope usage_definitions
+   (thisNestedScope, nestedFreeVars) <-
+      local (Set.union locals) $ foldNestedScopes usage_definitions
    enclosingScope <- ask
    let -- get all the variables which are free in the top level of
        -- this current nested scope
-       nestedFreeVars = nestedScopeFreeVars thisNestedScope
        -- variables which are free in nested scopes and bound in the current scope
        cellVars = locals `Set.intersection` nestedFreeVars
        -- variables which are referenced in the current scope but not local,
@@ -279,10 +283,9 @@ functionNestedScope scope (Usage {..}) parameters scopeIdentifier name = do
           , definitionScope_freeVars = freeVars 
           , definitionScope_cellVars = cellVars
           , definitionScope_explicitGlobals = usage_globals }
-   let jointScope = joinNestedScopes scope thisNestedScope
-   return $ insertNestedScope scopeIdentifier 
-               (name, thisLocalScope)
-               jointScope
+   let newScope =
+          insertNestedScope scopeIdentifier (name, thisLocalScope) thisNestedScope 
+   return (newScope, freeVars)
 
 -- separate the positional parameters from the positional varargs and the
 -- keyword varargs
