@@ -55,7 +55,7 @@ import Types
 import Data.Set as Set
    ( empty, singleton, fromList, union, unions, difference
    , intersection, toList, size )
-import Data.Map as Map (empty, insert, elems, toList, union)
+import Data.Map as Map (empty, insert, toList, union)
 import Data.List (foldl', intersperse)
 import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
@@ -303,16 +303,6 @@ parseParameterTypes = parseAcc [] Nothing Nothing
          VarArgsPos {..} -> parseAcc pos (Just $ fromIdentString param_name) varKeyword rest
          VarArgsKeyword {..} -> parseAcc pos varPos (Just $ fromIdentString param_name) rest
          _other -> parseAcc pos varPos varKeyword rest
-
--- Get all the free variables from all the identifiers at the top level
--- of the nested scope.
-nestedScopeFreeVars :: NestedScope -> VarSet
-nestedScopeFreeVars (NestedScope scope)
-   = Set.unions $ map getFreeVars $ elems scope
-   where
-   getFreeVars :: (String, LocalScope) -> VarSet
-   getFreeVars (_name, localScope) =
-      definitionScope_freeVars localScope 
 
 instance Monoid Usage where
    mempty = Usage
