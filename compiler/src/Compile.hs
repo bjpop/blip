@@ -118,7 +118,7 @@ compileFile config path = do
       -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
       let modSeconds = (0 :: Integer)
       pyModule <- parseAndCheckErrors fileContents path
-      let (moduleLocals, nestedScope) = topScope pyModule
+      (moduleLocals, nestedScope) <- topScope pyModule
       -- canonicalPath <- canonicalizePath path 
       canonicalPath <- return path 
       let state = initState ModuleContext moduleLocals 

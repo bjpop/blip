@@ -66,7 +66,7 @@ import Language.Python.Common.AST as AST
    , CompIfSpan )
 import Data.Monoid (Monoid (..))
 import Control.Monad (foldM)
-import Control.Monad.Reader (Reader, local, ask, runReader)
+import Control.Monad.Reader (ReaderT, local, ask, runReaderT)
 import Text.PrettyPrint.HughesPJ as Pretty
    ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty
    , render, parens, comma, int, hcat )
@@ -75,7 +75,7 @@ import State (emptyVarSet, emptyParameterTypes)
 import Utils ( identsFromParameters, spanToScopeIdentifier
              , fromIdentString, maybeToList )
 
-type ScopeM = Reader VarSet 
+type ScopeM a = ReaderT VarSet IO a
 
 instance Pretty ScopeIdentifier where
    pretty (row1, col1, row2, col2) =
@@ -146,21 +146,19 @@ emptyNestedScope = NestedScope Map.empty
 
 -- returns the 'local' scope of the top-level of the module and
 -- the nested scope of the module (anything not at the top level)
-topScope :: ModuleSpan -> (LocalScope, NestedScope)
-topScope (Module suite) =
-   (moduleLocals, nested)
-   where
-   Usage {..} = varUsage suite
+topScope :: ModuleSpan -> IO (LocalScope, NestedScope)
+topScope (Module suite) = do
    -- XXX should check that nothing was declared global at the top level
-   moduleLocals =
-      LocalScope
-      { definitionScope_params = emptyParameterTypes
-      , definitionScope_locals = usage_assigned
-      , definitionScope_freeVars = Set.empty
-      , definitionScope_cellVars = Set.empty
-      , definitionScope_explicitGlobals = Set.empty }
-   nested :: NestedScope
-   nested = runReader (foldM buildNestedScope emptyNestedScope usage_definitions) emptyVarSet
+   let Usage {..} = varUsage suite
+       moduleLocals =
+          LocalScope
+          { definitionScope_params = emptyParameterTypes
+          , definitionScope_locals = usage_assigned
+          , definitionScope_freeVars = Set.empty
+          , definitionScope_cellVars = Set.empty
+          , definitionScope_explicitGlobals = Set.empty }
+   nested <- runReaderT (foldM buildNestedScope emptyNestedScope usage_definitions) emptyVarSet
+   return (moduleLocals, nested)
 
 insertNestedScope :: ScopeIdentifier -> (String, LocalScope) -> NestedScope -> NestedScope
 insertNestedScope key value (NestedScope scope) = 
