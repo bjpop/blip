@@ -126,8 +126,10 @@ indexedVarSet :: VarIndex -> VarSet -> IndexedVarSet
 indexedVarSet from set =
    Map.fromList $ sort $ zip (Set.toList set) [from..]
 
+-- Return the keys of an IndexedVarSet in ascending order of the indices
 indexedVarSetKeys :: IndexedVarSet -> [Identifier]
-indexedVarSetKeys = Map.keys
+indexedVarSetKeys varset =
+   map snd $ sort [ (index, name) | (name, index) <- Map.assocs varset ]
 
 incInstructionIndex :: Bytecode -> Compile Word16
 incInstructionIndex bytecode = do
