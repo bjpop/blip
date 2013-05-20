@@ -54,11 +54,11 @@ data ParameterTypes
 
 data LocalScope
    = LocalScope
-     { definitionScope_params :: !ParameterTypes
-     , definitionScope_locals :: !VarSet
-     , definitionScope_freeVars :: !VarSet
-     , definitionScope_cellVars :: !VarSet
-     , definitionScope_explicitGlobals :: !VarSet
+     { localScope_params :: !ParameterTypes
+     , localScope_locals :: !VarSet
+     , localScope_freeVars :: !VarSet
+     , localScope_cellVars :: !VarSet
+     , localScope_explicitGlobals :: !VarSet
      }
      deriving Show
 

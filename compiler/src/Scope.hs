@@ -93,11 +93,11 @@ instance Pretty NestedScope where
 
 instance Pretty LocalScope where
    pretty (LocalScope {..}) =
-      text "params:" <+> (nest 5 $ pretty definitionScope_params) $$
-      prettyVarSet "locals:" definitionScope_locals $$
-      prettyVarSet "freevars:" definitionScope_freeVars $$
-      prettyVarSet "cellvars:" definitionScope_cellVars $$
-      prettyVarSet "globals:" definitionScope_explicitGlobals
+      text "params:" <+> (nest 5 $ pretty localScope_params) $$
+      prettyVarSet "locals:" localScope_locals $$
+      prettyVarSet "freevars:" localScope_freeVars $$
+      prettyVarSet "cellvars:" localScope_cellVars $$
+      prettyVarSet "globals:" localScope_explicitGlobals
 
 instance Pretty ParameterTypes where
    pretty (ParameterTypes {..}) =
@@ -152,11 +152,11 @@ topScope (Module suite) = do
    let Usage {..} = varUsage suite
        moduleLocals =
           LocalScope
-          { definitionScope_params = emptyParameterTypes
-          , definitionScope_locals = usage_assigned
-          , definitionScope_freeVars = Set.empty
-          , definitionScope_cellVars = Set.empty
-          , definitionScope_explicitGlobals = Set.empty }
+          { localScope_params = emptyParameterTypes
+          , localScope_locals = usage_assigned
+          , localScope_freeVars = Set.empty
+          , localScope_cellVars = Set.empty
+          , localScope_explicitGlobals = Set.empty }
    (nested, _freeVars) <- runReaderT (foldNestedScopes usage_definitions) emptyVarSet
    return (moduleLocals, nested)
 
@@ -235,11 +235,11 @@ buildNestedScope (DefStmt (Class {..})) = do
        freeVars = directFreeVars `Set.union` nestedFreeVars
    let thisLocalScope =
           LocalScope
-          { definitionScope_params = emptyParameterTypes
-          , definitionScope_locals = locals
-          , definitionScope_freeVars = freeVars 
-          , definitionScope_cellVars = Set.empty
-          , definitionScope_explicitGlobals = usage_globals }
+          { localScope_params = emptyParameterTypes
+          , localScope_locals = locals
+          , localScope_freeVars = freeVars 
+          , localScope_cellVars = Set.empty
+          , localScope_explicitGlobals = usage_globals }
    let newScope =
           insertNestedScope (spanToScopeIdentifier stmt_annot)
              (fromIdentString class_name, thisLocalScope)
@@ -278,11 +278,11 @@ functionNestedScope (Usage {..}) parameters scopeIdentifier name = do
        freeVars = directFreeVars `Set.union` indirectFreeVars
        thisLocalScope =
           LocalScope
-          { definitionScope_params = parameters 
-          , definitionScope_locals = locals
-          , definitionScope_freeVars = freeVars 
-          , definitionScope_cellVars = cellVars
-          , definitionScope_explicitGlobals = usage_globals }
+          { localScope_params = parameters 
+          , localScope_locals = locals
+          , localScope_freeVars = freeVars 
+          , localScope_cellVars = cellVars
+          , localScope_explicitGlobals = usage_globals }
    let newScope =
           insertNestedScope scopeIdentifier (name, thisLocalScope) thisNestedScope 
    return (newScope, freeVars)

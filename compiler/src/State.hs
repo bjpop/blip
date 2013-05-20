@@ -58,11 +58,11 @@ emptyParameterTypes =
 emptyLocalScope :: LocalScope
 emptyLocalScope =
    LocalScope
-   { definitionScope_params = emptyParameterTypes 
-   , definitionScope_locals = emptyVarSet
-   , definitionScope_freeVars = emptyVarSet
-   , definitionScope_cellVars = emptyVarSet
-   , definitionScope_explicitGlobals = emptyVarSet
+   { localScope_params = emptyParameterTypes 
+   , localScope_locals = emptyVarSet
+   , localScope_freeVars = emptyVarSet
+   , localScope_cellVars = emptyVarSet
+   , localScope_explicitGlobals = emptyVarSet
    }
 
 initBlockState :: Context -> LocalScope -> BlockState
@@ -79,25 +79,25 @@ initBlockState context (LocalScope {..}) = BlockState
    , state_objectName = ""
    , state_instruction_index = 0
    , state_labelMap = Map.empty
-   , state_locals = definitionScope_locals
+   , state_locals = localScope_locals
    , state_fastLocals =
         if context == FunctionContext
-           then makeLocalsIndexedSet (identsFromParameters definitionScope_params)
-                   definitionScope_locals 
+           then makeLocalsIndexedSet (identsFromParameters localScope_params)
+                   localScope_locals 
            else Map.empty
    -- the indices for cellvars and freevars are used as offsets into an array
    -- within the code object. The cellvars come first, followed by the
    -- freevars. These indices are used by the LOAD_DEREF and STORE_DEREF
    -- bytecode instructions.
    -- cellvars are indexed from 0 upwards
-   , state_cellVars = indexedVarSet 0 $ definitionScope_cellVars 
+   , state_cellVars = indexedVarSet 0 $ localScope_cellVars 
    -- freevars are indexed from (length cellvars) 
    , state_freeVars = indexedVarSet
-                         (fromIntegral $ Set.size definitionScope_cellVars) 
-                         definitionScope_freeVars 
-   , state_explicitGlobals = definitionScope_explicitGlobals
-   , state_argcount = fromIntegral $ countPosParameters definitionScope_params
-   , state_flags = varArgsFlags definitionScope_params 0
+                         (fromIntegral $ Set.size localScope_cellVars) 
+                         localScope_freeVars 
+   , state_explicitGlobals = localScope_explicitGlobals
+   , state_argcount = fromIntegral $ countPosParameters localScope_params
+   , state_flags = varArgsFlags localScope_params 0
    , state_frameBlockStack = []
    , state_context = context
    }
