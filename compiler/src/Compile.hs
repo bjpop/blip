@@ -496,9 +496,13 @@ instance Compilable ExprSpan where
       compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    compile (Call {..}) = do
       compile call_fun
-      (numPosArgs, numKeyWordArgs) <- compileCallArgs call_args
-      let opArg = numPosArgs .|. numKeyWordArgs `shiftL` 8
-      emitCodeArg CALL_FUNCTION opArg 
+      CallArgs {..} <- compileCallArgs call_args
+      let opArg = callArgs_pos .|. callArgs_keyword `shiftL` 8
+      case (callArgs_varPos, callArgs_varKeyword) of
+         (False, False) -> emitCodeArg CALL_FUNCTION opArg 
+         (True, False) -> emitCodeArg CALL_FUNCTION_VAR opArg 
+         (False, True) -> emitCodeArg CALL_FUNCTION_KW opArg 
+         (True, True) -> emitCodeArg CALL_FUNCTION_VAR_KW opArg 
    compile (Subscript {..}) = do
       compile subscriptee
       compile subscript_expr
@@ -923,21 +927,42 @@ removeQuotes ('\'':rest) = init rest
 removeQuotes ('"':rest) = init rest
 removeQuotes other = error $ "bad literal string: " ++ other
 
+data CallArgs =
+   CallArgs
+   { callArgs_pos :: !Word16
+   , callArgs_keyword :: !Word16
+   , callArgs_varPos :: !Bool
+   , callArgs_varKeyword :: !Bool
+   }
+
+initCallArgs :: CallArgs
+initCallArgs =
+   CallArgs
+   { callArgs_pos = 0
+   , callArgs_keyword = 0
+   , callArgs_varPos = False
+   , callArgs_varKeyword = False
+   }
+
 -- Compile the arguments to a function call and return the number
 -- of positional arguments, and the number of keyword arguments.
-compileCallArgs :: [ArgumentSpan] -> Compile (Word16, Word16)
-compileCallArgs = foldM compileArg (0, 0)
+compileCallArgs :: [ArgumentSpan] -> Compile CallArgs
+compileCallArgs = foldM compileArg initCallArgs 
    where
-   compileArg :: (Word16, Word16) -> ArgumentSpan -> Compile (Word16, Word16)
-   compileArg (posArgs, kwArgs) (ArgExpr {..}) = do
+   compileArg :: CallArgs  -> ArgumentSpan -> Compile CallArgs 
+   compileArg callArgs@(CallArgs {..}) (ArgExpr {..}) = do
       compile arg_expr
-      return (posArgs + 1, kwArgs)
-   compileArg (posArgs, kwArgs) (ArgKeyword {..}) = do
+      return $ callArgs { callArgs_pos = callArgs_pos + 1 }
+   compileArg callArgs@(CallArgs {..}) (ArgKeyword {..}) = do
       compileConstantEmit $ Unicode $ ident_string arg_keyword
       compile arg_expr
-      return (posArgs, kwArgs + 1)
-   compileArg _count other =
-      error $ "unsupported argument: " ++ prettyText other
+      return $ callArgs { callArgs_keyword = callArgs_keyword + 1 }
+   compileArg callArgs@(CallArgs {..}) (ArgVarArgsPos {..}) = do
+      compile arg_expr
+      return $ callArgs { callArgs_varPos = True }
+   compileArg callArgs@(CallArgs {..}) (ArgVarArgsKeyword {..}) = do
+      compile arg_expr
+      return $ callArgs { callArgs_varKeyword = True }
 
 -- XXX need to handle extended slices, slice expressions and ellipsis
 compileSlices :: [SliceSpan] -> Compile ()

@@ -111,7 +111,7 @@ varArgsFlags (ParameterTypes {..}) flags =
       maybe 0 (const co_varargs) parameterTypes_varPos
    keywordVarArgsMask :: CodeObjectFlagMask
    keywordVarArgsMask =
-      maybe 0 (const co_varkeywords) parameterTypes_varPos
+      maybe 0 (const co_varkeywords) parameterTypes_varKeyword 
 
 -- Local variables are indexed starting with parameters first, in the order
 -- that they appear in the function head, followed by the other
