@@ -53,7 +53,7 @@ import Types
    ( Identifier, VarSet, LocalScope (..)
    , NestedScope (..), ScopeIdentifier, ParameterTypes (..) )
 import Data.Set as Set
-   ( empty, singleton, fromList, union, unions, difference
+   ( empty, singleton, fromList, union, difference
    , intersection, toList, size )
 import Data.Map as Map (empty, insert, toList, union)
 import Data.List (foldl', intersperse)
@@ -354,7 +354,7 @@ instance VarUsage StatementSpan where
         varUsage while_body `mappend`
         varUsage while_else
    varUsage (For {..})
-      = mempty { usage_assigned = assignTargets for_targets } `mappend` 
+      = assignUsage for_targets `mappend` 
         varUsage for_generator `mappend`
         varUsage for_body `mappend` 
         varUsage for_else
@@ -373,11 +373,9 @@ instance VarUsage StatementSpan where
    varUsage (Conditional {..})
       = varUsage cond_guards `mappend` varUsage cond_else
    varUsage (Assign {..})
-      = mempty { usage_assigned = assignTargets assign_to } `mappend`
-        varUsage assign_expr
+      = assignUsage assign_to `mappend` varUsage assign_expr
    varUsage (AugmentedAssign {..})
-      = mempty { usage_assigned = assignTargets [aug_assign_to] } `mappend`
-        varUsage aug_assign_expr
+      = assignUsage [aug_assign_to] `mappend` varUsage aug_assign_expr
    varUsage (Decorated {..})
        = varUsage decorated_def
    -- XXX exception handlers need handling
@@ -462,7 +460,7 @@ instance VarUsage a => VarUsage (ComprehensionSpan a) where
 
 instance VarUsage CompForSpan where
    varUsage (CompFor {..}) = 
-      mempty { usage_assigned = assignTargets comp_for_exprs } `mappend` 
+      assignUsage comp_for_exprs `mappend` 
       varUsage comp_in_expr `mappend`
       varUsage comp_for_iter
 
@@ -477,6 +475,25 @@ instance VarUsage CompIfSpan where
 
 -- Collect all the variables which are assigned to in a list of expressions (patterns).
 -- XXX Incomplete
+assignUsage :: [ExprSpan] -> Usage 
+assignUsage = foldl' addUsage mempty
+   where
+   addUsage :: Usage -> ExprSpan -> Usage 
+   addUsage usage expr = targetUsage expr `mappend` usage
+   targetUsage :: ExprSpan -> Usage
+   targetUsage (Var {..}) = mempty { usage_assigned = singleVarSet var_ident }
+   targetUsage (List {..}) = assignUsage list_exprs 
+   targetUsage (Tuple {..}) = assignUsage tuple_exprs
+   targetUsage (Paren {..}) = targetUsage paren_expr
+   -- all variables mentioned in a subscript, attribute lookup
+   -- and sliced expr are read from, not written to
+   targetUsage expr@(Subscript {..}) = varUsage expr
+   targetUsage expr@(BinaryOp{..})= varUsage expr
+   targetUsage expr@(SlicedExpr{..})= varUsage expr
+   -- targetUsage _other = mempty
+   targetUsage other = error $ "Unsupported assignTarget: " ++ show other
+
+{-
 assignTargets :: [ExprSpan] -> VarSet
 assignTargets = foldl' addTarget mempty
    where
@@ -487,7 +504,9 @@ assignTargets = foldl' addTarget mempty
    exprVars (List {..}) = Set.unions $ Prelude.map exprVars list_exprs
    exprVars (Tuple {..}) = Set.unions $ Prelude.map exprVars tuple_exprs
    exprVars (Paren {..}) = exprVars paren_expr
-   exprVars _other = Set.empty
+   -- exprVars _other = Set.empty
+   exprVars other = error $ "Unsupported assignTarget: " ++ show other
+-}
 
 singleVarSet :: AST.Ident a -> VarSet
 singleVarSet = Set.singleton . fromIdentString
