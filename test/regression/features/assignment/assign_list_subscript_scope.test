@@ -1,4 +1,4 @@
-blip assign_array_scope.py && python3.3 assign_array_scope.pyc
+blip assign_list_subscript_scope.py && python3.3 assign_list_subscript_scope.pyc
 <<<
 >>>
 [1]
