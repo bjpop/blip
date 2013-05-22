@@ -354,7 +354,7 @@ instance VarUsage StatementSpan where
         varUsage while_body `mappend`
         varUsage while_else
    varUsage (For {..})
-      = assignUsage for_targets `mappend` 
+      = varUsage (AssignTargets $ for_targets) `mappend` 
         varUsage for_generator `mappend`
         varUsage for_body `mappend` 
         varUsage for_else
@@ -373,9 +373,9 @@ instance VarUsage StatementSpan where
    varUsage (Conditional {..})
       = varUsage cond_guards `mappend` varUsage cond_else
    varUsage (Assign {..})
-      = assignUsage assign_to `mappend` varUsage assign_expr
+      = varUsage (AssignTargets assign_to) `mappend` varUsage assign_expr
    varUsage (AugmentedAssign {..})
-      = assignUsage [aug_assign_to] `mappend` varUsage aug_assign_expr
+      = varUsage [aug_assign_to] `mappend` varUsage aug_assign_expr
    varUsage (Decorated {..})
        = varUsage decorated_def
    -- XXX exception handlers need handling
@@ -460,7 +460,7 @@ instance VarUsage a => VarUsage (ComprehensionSpan a) where
 
 instance VarUsage CompForSpan where
    varUsage (CompFor {..}) = 
-      assignUsage comp_for_exprs `mappend` 
+      varUsage (AssignTargets comp_for_exprs) `mappend` 
       varUsage comp_in_expr `mappend`
       varUsage comp_for_iter
 
@@ -473,40 +473,25 @@ instance VarUsage CompIfSpan where
       varUsage comp_if `mappend`
       varUsage comp_if_iter
 
--- Collect all the variables which are assigned to in a list of expressions (patterns).
--- XXX Incomplete
-assignUsage :: [ExprSpan] -> Usage 
-assignUsage = foldl' addUsage mempty
-   where
-   addUsage :: Usage -> ExprSpan -> Usage 
-   addUsage usage expr = targetUsage expr `mappend` usage
-   targetUsage :: ExprSpan -> Usage
-   targetUsage (Var {..}) = mempty { usage_assigned = singleVarSet var_ident }
-   targetUsage (List {..}) = assignUsage list_exprs 
-   targetUsage (Tuple {..}) = assignUsage tuple_exprs
-   targetUsage (Paren {..}) = targetUsage paren_expr
-   -- all variables mentioned in a subscript, attribute lookup
-   -- and sliced expr are read from, not written to
-   targetUsage expr@(Subscript {..}) = varUsage expr
-   targetUsage expr@(BinaryOp{..})= varUsage expr
-   targetUsage expr@(SlicedExpr{..})= varUsage expr
-   -- targetUsage _other = mempty
-   targetUsage other = error $ "Unsupported assignTarget: " ++ show other
+newtype AssignTargets = AssignTargets [ExprSpan]
 
-{-
-assignTargets :: [ExprSpan] -> VarSet
-assignTargets = foldl' addTarget mempty
-   where
-   addTarget :: VarSet -> ExprSpan -> VarSet
-   addTarget set expr = Set.union (exprVars expr) set
-   exprVars :: ExprSpan -> VarSet
-   exprVars (Var {..}) = singleVarSet var_ident
-   exprVars (List {..}) = Set.unions $ Prelude.map exprVars list_exprs
-   exprVars (Tuple {..}) = Set.unions $ Prelude.map exprVars tuple_exprs
-   exprVars (Paren {..}) = exprVars paren_expr
-   -- exprVars _other = Set.empty
-   exprVars other = error $ "Unsupported assignTarget: " ++ show other
--}
+-- Collect all the variables which are assigned to in a list of expressions (patterns).
+instance VarUsage AssignTargets where
+   varUsage (AssignTargets exprs) = foldl' addUsage mempty exprs
+      where
+      addUsage :: Usage -> ExprSpan -> Usage 
+      addUsage usage expr = targetUsage expr `mappend` usage
+      targetUsage :: ExprSpan -> Usage
+      targetUsage (Var {..}) = mempty { usage_assigned = singleVarSet var_ident }
+      targetUsage (List {..}) = varUsage $ AssignTargets list_exprs 
+      targetUsage (Tuple {..}) = varUsage $ AssignTargets tuple_exprs
+      targetUsage (Paren {..}) = targetUsage paren_expr
+      -- all variables mentioned in a subscript, attribute lookup
+      -- and sliced expr are read from, not written to
+      targetUsage expr@(Subscript {..}) = varUsage expr
+      targetUsage expr@(BinaryOp{..}) = varUsage expr
+      targetUsage expr@(SlicedExpr{..}) = varUsage expr
+      targetUsage other = error $ "Unsupported assignTarget: " ++ show other
 
 singleVarSet :: AST.Ident a -> VarSet
 singleVarSet = Set.singleton . fromIdentString
