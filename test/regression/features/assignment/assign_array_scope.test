@@ -1,0 +1,6 @@
+blip assign_array_scope.py && python3.3 assign_array_scope.pyc
+<<<
+>>>
+[1]
+>>>2
+>>>=0
