@@ -63,7 +63,7 @@ import Language.Python.Common.AST as AST
    , Slice (..), SliceSpan, ModuleSpan, Module (..), ParameterSpan
    , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
-   , CompIfSpan )
+   , CompIfSpan, Handler (..), HandlerSpan, ExceptClause (..), ExceptClauseSpan  )
 import Data.Monoid (Monoid (..))
 import Control.Monad (mapAndUnzipM)
 import Control.Monad.Reader (ReaderT, local, ask, runReaderT)
@@ -380,7 +380,8 @@ instance VarUsage StatementSpan where
        = varUsage decorated_def
    -- XXX exception handlers need handling
    varUsage (Try {..})
-       = varUsage [try_body, try_else, try_finally]
+       = varUsage try_body `mappend` varUsage  try_excepts `mappend`
+         varUsage try_else `mappend`  varUsage try_finally
    varUsage (With {..})
       = varUsage with_context `mappend`
         varUsage with_body
@@ -394,6 +395,18 @@ instance VarUsage StatementSpan where
    varUsage (Raise {..}) = varUsage raise_expr
    varUsage (Delete {..}) = varUsage del_exprs
    varUsage _other = mempty
+
+instance VarUsage HandlerSpan where
+   varUsage (Handler {..}) = varUsage handler_clause `mappend` varUsage handler_suite
+
+instance VarUsage ExceptClauseSpan where
+   varUsage (ExceptClause {..}) =
+      case except_clause of
+         Nothing -> mempty
+         Just (except, maybeAs) ->
+            case maybeAs of
+               Nothing -> varUsage except
+               Just asName -> varUsage except `mappend` (varUsage $ AssignTargets [asName])
 
 instance VarUsage RaiseExprSpan where
    varUsage (RaiseV3 maybeExpr) = varUsage maybeExpr
@@ -476,6 +489,7 @@ instance VarUsage CompIfSpan where
 newtype AssignTargets = AssignTargets [ExprSpan]
 
 -- Collect all the variables which are assigned to in a list of expressions (patterns).
+-- XXX we should support starred assign targets.
 instance VarUsage AssignTargets where
    varUsage (AssignTargets exprs) = foldl' addUsage mempty exprs
       where
