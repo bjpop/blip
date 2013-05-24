@@ -1,0 +1,6 @@
+blip class_metaclass.py && python3.3 class_metaclass.pyc
+<<<
+>>>
+C () {'__qualname__': 'C', '__module__': '__main__'}
+>>>2
+>>>=0
