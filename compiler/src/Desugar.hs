@@ -29,10 +29,83 @@ import Language.Python.Common.AST as AST
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Language.Python.Common (prettyText)
 
+{-
+
+Desugaring of comprehensions.
+
+Comprehensions are desugared into functions containing for loops.
+We use a function because the local variables for a for loop are not
+in scope outside the loop (unlike Python's actual for loops). Putting
+the loop inside the function gives us the desired scope behaviour.
+
+For example:
+
+    [ x + 1 for x in y if x > 2 ]
+
+becomes:
+
+    def f():
+        $result = []
+        for x in y:
+            if x > 2:
+                $result.append(x)
+        return $result
+    f()
+
+In practice we don't need to generate a name for our function, because
+we can just make a function byte code object and then call it directly.
+
+A problem with the above scheme occurs when we have list comprehensions
+in the body of a class, which refer to other variables local to the class:
+
+    class C():
+        a = [1,2,3]
+        b = [ x + 1 for x in a ]
+
+The "obvious" way to desugar that is:
+
+    class C():
+        a = [1,2,3]
+        def f():
+            $result = []
+            for x in a:
+                $result.append(x)
+            return $result
+        b = f()
+
+The problem is that the variable 'a' is free in the definition of f.
+The scope rules of classes do not allow 'a' to be in scope inside
+functions defined in the class (this is different than normal
+nested functions). We'd have to refer to the variable as 'C.a'.
+
+We could use the class name to qualify the scope of such free variables.
+But another, perhaps simpler way is to provide them as arguments to 
+the new function:
+
+    class C():
+        a = [1,2,3]
+        def f(a):
+            $result = []
+            for x in a:
+                $result.append(x)
+            return $result
+        b = f(a)
+
+-}
+
+-- Special free variable which cannot appear in the source of the program
+-- and is guaranteed to be unique in the comprehension.
+-- Nested comprehensions get desugared into nested functions so there
+-- is no danger of a name clash.
 resultName :: IdentSpan 
 resultName = mkIdent "$result"
 
-desugarComprehension :: [StatementSpan] -> (a -> StatementSpan) -> [StatementSpan] -> ComprehensionSpan a -> [StatementSpan]
+desugarComprehension
+   :: [StatementSpan]      -- Initialiser of the stmt (e.g. $result = [])
+   -> (a -> StatementSpan) -- Update the accumulator (e.g. $result.append(x)) 
+   -> [StatementSpan]      -- Return the accumulator (e.g. return $result)
+   -> ComprehensionSpan a  -- Comprehension to desugar
+   -> [StatementSpan]      -- Body of the desugared function
 desugarComprehension initStmt updater returnStmt (Comprehension {..}) =
    initStmt ++ [forLoop] ++ returnStmt
    where
@@ -80,7 +153,7 @@ desugarWith stmt@(With {..}) =
          With { with_context = [context1]
               , with_body =
                    [ desugarWith $ With { with_context = context2:rest
-                                      , with_body = with_body
-                                      , stmt_annot = stmt_annot } ]
+                                        , with_body = with_body
+                                        , stmt_annot = stmt_annot } ]
               , stmt_annot = stmt_annot }
 desugarWith other = error $ "desigarWith applied to non with statement: " ++ prettyText other
