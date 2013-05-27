@@ -46,7 +46,7 @@
 -----------------------------------------------------------------------------
 
 module Scope
-   (topScope, renderScope, spanToScopeIdentifier)
+   (topScope, renderScope)
    where
 
 import Types
@@ -190,6 +190,7 @@ buildNestedScope (DefLambda (Lambda {..})) = do
        parameterTypes = parseParameterTypes lambda_args
    functionNestedScope usage parameterTypes
       (spanToScopeIdentifier expr_annot) "<lambda>" 
+
 buildNestedScope (DefComprehension (Comprehension {..})) = do
    -- we introduce a new local variable called $result when compiling
    -- comprehensions, when they are desugared into functions
@@ -198,8 +199,14 @@ buildNestedScope (DefComprehension (Comprehension {..})) = do
                       , usage_referenced = resultVarSet } `mappend`
                varUsage comprehension_expr `mappend`
                varUsage comprehension_for
-   functionNestedScope usage emptyParameterTypes
+   -- Comprehensions are turned into functions whose parameters are the
+   -- variables which are free in the comprehension. This is equal
+   -- to the variables which are referenced but not assigned.
+       parameters = usage_referenced usage `Set.difference` usage_assigned usage
+       parameterTypes = emptyParameterTypes { parameterTypes_pos = Set.toList parameters } 
+   functionNestedScope usage parameterTypes
       (spanToScopeIdentifier comprehension_annot) "<comprehension>" 
+
 {-
    Classes can have freeVars, but they don't have cellVars.
 
@@ -378,7 +385,6 @@ instance VarUsage StatementSpan where
       = varUsage [aug_assign_to] `mappend` varUsage aug_assign_expr
    varUsage (Decorated {..})
        = varUsage decorated_def
-   -- XXX exception handlers need handling
    varUsage (Try {..})
        = varUsage try_body `mappend` varUsage  try_excepts `mappend`
          varUsage try_else `mappend`  varUsage try_finally

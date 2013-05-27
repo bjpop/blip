@@ -49,7 +49,7 @@ import Desugar (desugarComprehension, desugarWith, resultName)
 import Utils 
    ( isPureExpr, isPyObjectExpr, mkAssignVar, mkList
    , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
-   , mkSubscript, mkReturn, mkYield )
+   , mkSubscript, mkReturn, mkYield, spanToScopeIdentifier )
 import StackDepth (maxStackDepth)
 import ProgName (progName)
 import State
@@ -67,8 +67,8 @@ import Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
-   , FrameBlockInfo (..), Context (..) )
-import Scope (topScope, renderScope, spanToScopeIdentifier)
+   , FrameBlockInfo (..), Context (..), ParameterTypes (..), LocalScope (..) )
+import Scope (topScope, renderScope)
 import Blip.Marshal as Blip
    ( writePyc, PycFile (..), PyObject (..), co_generator )
 import Blip.Bytecode (Opcode (..), encode)
@@ -544,7 +544,8 @@ instance Compilable DecoratorSpan where
       compileDottedName decorator_name
       let numDecorators = length decorator_args
       when (numDecorators > 0) $ do
-          mapM_ compile decorator_args
+          -- mapM_ compile decorator_args
+          _ <- compileCallArgs decorator_args
           emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
       where
       compileDottedName (name:rest) = do
@@ -657,7 +658,10 @@ compileClass (Class {..}) decorators = do
       emitCodeNoArg LOAD_BUILD_CLASS
       compileClosure className classBodyObj 0
       compileConstantEmit $ Unicode className
-      mapM_ compile class_args
+      -- XXX this does not cover all argument types
+      -- maybe we should use compileCallArgs?
+      -- mapM_ compile class_args
+      _ <- compileCallArgs class_args
       emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
    emitWriteVar className
 compileClass other _decorators = error $ "compileClass applied to a non class: " ++ prettyText other
@@ -876,12 +880,25 @@ compileGuard restLabel (expr, stmts) = do
 
 -- Desugar the comprehension into a zero-arity function (body) with
 -- a (possibly nested) for loop, then call the function.
-compileComprehension :: Identifier -> [StatementSpan] -> (a -> StatementSpan) -> [StatementSpan] -> ComprehensionSpan a -> Compile ()
+compileComprehension
+   :: Identifier 
+   -> [StatementSpan]
+   -> (a -> StatementSpan) 
+   -> [StatementSpan]
+   -> ComprehensionSpan a
+   -> Compile ()
 compileComprehension name initStmt updater returnStmt comprehension = do
    let desugaredComp = desugarComprehension initStmt updater returnStmt comprehension 
-   funObj <- nestedBlock FunctionContext (comprehension_annot comprehension) $ compile $ Body desugaredComp
+       comprehensionSpan = comprehension_annot comprehension
+   funObj <- nestedBlock
+                FunctionContext
+                comprehensionSpan 
+                (compile $ Body desugaredComp)
    compileClosure name funObj 0
-   emitCodeArg CALL_FUNCTION 0
+   (_name, localScope) <- getLocalScope $ spanToScopeIdentifier comprehensionSpan
+   let parameterNames = parameterTypes_pos $ localScope_params localScope 
+   mapM_ emitReadVar parameterNames
+   emitCodeArg CALL_FUNCTION $ fromIntegral $ length parameterNames
 
 -- Convert a constant expression into the equivalent object. This
 -- only works for expressions which have a counterpart in the object

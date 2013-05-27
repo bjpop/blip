@@ -13,6 +13,6 @@ print(C.s)
 #   def x():
 #       result = []
 #       for y in l:
-#           result.append(y)
+#           result.append(y + 1)
 #       return result
 #   s = x() 
