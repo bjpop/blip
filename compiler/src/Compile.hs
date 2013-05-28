@@ -496,13 +496,7 @@ instance Compilable ExprSpan where
       compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
    compile (Call {..}) = do
       compile call_fun
-      CallArgs {..} <- compileCallArgs call_args
-      let opArg = callArgs_pos .|. callArgs_keyword `shiftL` 8
-      case (callArgs_varPos, callArgs_varKeyword) of
-         (False, False) -> emitCodeArg CALL_FUNCTION opArg 
-         (True, False) -> emitCodeArg CALL_FUNCTION_VAR opArg 
-         (False, True) -> emitCodeArg CALL_FUNCTION_KW opArg 
-         (True, True) -> emitCodeArg CALL_FUNCTION_VAR_KW opArg 
+      compileCall 0 call_args
    compile (Subscript {..}) = do
       compile subscriptee
       compile subscript_expr
@@ -543,10 +537,8 @@ instance Compilable DecoratorSpan where
    compile dec@(Decorator {..}) = do
       compileDottedName decorator_name
       let numDecorators = length decorator_args
-      when (numDecorators > 0) $ do
-          -- mapM_ compile decorator_args
-          _ <- compileCallArgs decorator_args
-          emitCodeArg CALL_FUNCTION $ fromIntegral $ length decorator_args 
+      when (numDecorators > 0) $ 
+          compileCall 0 decorator_args
       where
       compileDottedName (name:rest) = do
          emitReadVar $ ident_string name
@@ -658,11 +650,7 @@ compileClass (Class {..}) decorators = do
       emitCodeNoArg LOAD_BUILD_CLASS
       compileClosure className classBodyObj 0
       compileConstantEmit $ Unicode className
-      -- XXX this does not cover all argument types
-      -- maybe we should use compileCallArgs?
-      -- mapM_ compile class_args
-      _ <- compileCallArgs class_args
-      emitCodeArg CALL_FUNCTION (2 + (fromIntegral $ length class_args))
+      compileCall 2 class_args
    emitWriteVar className
 compileClass other _decorators = error $ "compileClass applied to a non class: " ++ prettyText other
 
@@ -960,6 +948,22 @@ initCallArgs =
    , callArgs_varPos = False
    , callArgs_varKeyword = False
    }
+
+-- Compile the arguments to a call and
+-- decide which particular CALL_FUNCTION bytecode to emit.
+-- numExtraArgs counts any additional arguments the function
+-- might have been applied to, which is necessary for classes
+-- which get extra arguments beyond the ones mentioned in the
+-- program source.
+compileCall :: Word16 -> [ArgumentSpan] -> Compile ()
+compileCall numExtraArgs args = do
+   CallArgs {..} <- compileCallArgs args 
+   let opArg = (callArgs_pos + numExtraArgs) .|. callArgs_keyword `shiftL` 8
+   case (callArgs_varPos, callArgs_varKeyword) of
+      (False, False) -> emitCodeArg CALL_FUNCTION opArg 
+      (True, False) -> emitCodeArg CALL_FUNCTION_VAR opArg 
+      (False, True) -> emitCodeArg CALL_FUNCTION_KW opArg 
+      (True, True) -> emitCodeArg CALL_FUNCTION_VAR_KW opArg 
 
 -- Compile the arguments to a function call and return the number
 -- of positional arguments, and the number of keyword arguments.
