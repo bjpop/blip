@@ -525,7 +525,9 @@ instance Compilable ExprSpan where
          emitCodeNoArg RETURN_VALUE
          assemble
          makeObject
-      compileClosure "<lambda>" funBodyObj 0
+      numDefaults <- compileDefaultParams lambda_args
+      -- compileClosure funName funBodyObj numDefaults
+      compileClosure "<lambda>" funBodyObj numDefaults
    compile other = error $ "Unsupported expr:\n" ++ prettyText other
 
 instance Compilable AssignOpSpan where

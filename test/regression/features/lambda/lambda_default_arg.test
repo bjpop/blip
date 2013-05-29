@@ -1,0 +1,9 @@
+blip lambda_default_arg.py && python3.3 lambda_default_arg.pyc
+<<<
+>>>
+4
+5
+6
+3
+>>>2
+>>>=0
