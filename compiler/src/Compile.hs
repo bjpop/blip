@@ -713,6 +713,7 @@ compileHandlers end handlerLabel (Handler {..} : rest) = do
    compileHandlerClause nextLabel handler_clause
    emitCodeNoArg POP_TOP
    mapM_ compile handler_suite
+   emitCodeNoArg POP_EXCEPT
    emitCodeArg JUMP_FORWARD end
    compileHandlers end nextLabel rest 
 
@@ -741,14 +742,15 @@ compileHandlerClause nextHandler (ExceptClause {..}) = do
    case except_clause of
       Nothing -> emitCodeNoArg POP_TOP >> emitCodeNoArg POP_TOP
       Just (target, asExpr) -> do
-         emitCodeNoArg DUP_TOP
-         compile target
-         emitCodeArg COMPARE_OP exactMatchOp
-         emitCodeArg POP_JUMP_IF_FALSE nextHandler
-         emitCodeNoArg POP_TOP
+         emitCodeNoArg DUP_TOP -- make a copy of the exception value on the stack
+         compile target        -- compile the exception type to match against 
+         emitCodeArg COMPARE_OP exactMatchOp -- compare the actual exception with the match
+         emitCodeArg POP_JUMP_IF_FALSE nextHandler -- goto next handler if they don't match
+         emitCodeNoArg POP_TOP -- pop the True off the stack
          case asExpr of
-            Nothing -> emitCodeNoArg POP_TOP
-            Just expr -> compileAssignTo expr
+            Nothing -> emitCodeNoArg POP_TOP -- pop the exception off the stack
+            -- XXX we should del this name at the end.
+            Just expr -> compileAssignTo expr -- assign the exception to the as name
    where
    -- The code for an exact match operator.
    exactMatchOp :: Word16
