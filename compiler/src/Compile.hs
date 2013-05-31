@@ -350,19 +350,7 @@ instance Compilable StatementSpan where
             emitCodeArg RAISE_VARARGS 1
             labelNextInstruction end
          _other -> error "assert with no test"
-   -- XXX not complete
    compile stmt@(Try {..}) = compileTry stmt
-{-
-      firstHandler <- newLabel
-      emitCodeArg SETUP_EXCEPT firstHandler
-      withFrameBlock FrameBlockExcept $ do
-         mapM_ compile try_body
-         emitCodeNoArg POP_BLOCK
-      end <- newLabel
-      emitCodeArg JUMP_FORWARD end
-      compileHandlers end firstHandler try_excepts
-      labelNextInstruction end
--}
    compile (Import {..}) = mapM_ compile import_items
    -- XXX need to handle from __future__ 
    compile (FromImport {..}) = do
@@ -636,10 +624,13 @@ compileTry (Try {..}) = do
    withFrameBlock FrameBlockExcept $ do
       mapM_ compile try_body                     -- <code for S>
       emitCodeNoArg POP_BLOCK                    -- pops handler off block stack
+   orElse <- newLabel
+   emitCodeArg JUMP_FORWARD orElse 
    end <- newLabel                               -- L0
-   emitCodeArg JUMP_FORWARD end
    compileHandlers end firstHandler try_excepts
-   labelNextInstruction end                      -- <next statement>
+   labelNextInstruction orElse
+   mapM_ compile try_else
+   labelNextInstruction end                      -- L0: <next statement>
 compileTry other =
    error $ "Unexpected statement when compiling a try-except: " ++ prettyText other 
 
