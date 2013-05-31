@@ -351,7 +351,8 @@ instance Compilable StatementSpan where
             labelNextInstruction end
          _other -> error "assert with no test"
    -- XXX not complete
-   compile (Try {..}) = do
+   compile stmt@(Try {..}) = compileTry stmt
+{-
       firstHandler <- newLabel
       emitCodeArg SETUP_EXCEPT firstHandler
       withFrameBlock FrameBlockExcept $ do
@@ -361,6 +362,7 @@ instance Compilable StatementSpan where
       emitCodeArg JUMP_FORWARD end
       compileHandlers end firstHandler try_excepts
       labelNextInstruction end
+-}
    compile (Import {..}) = mapM_ compile import_items
    -- XXX need to handle from __future__ 
    compile (FromImport {..}) = do
@@ -589,7 +591,94 @@ instance Compilable RaiseExprSpan where
                        compile fromExpr
                        return 2
       emitCodeArg RAISE_VARARGS n 
-   compile stmt@(RaiseV2 _) = error $ "Python version 2 raise statement encountered: " ++ prettyText stmt
+   compile stmt@(RaiseV2 _) =
+      error $ "Python version 2 raise statement encountered: " ++ prettyText stmt
+
+{-
+   From CPython compile.c
+
+   Code generated for "try: S except E1 as V1: S1 except E2 as V2: S2 ...":
+   (The contents of the value stack is shown in [], with the top
+   at the right; 'tb' is trace-back info, 'val' the exception's
+   associated value, and 'exc' the exception.)
+
+   Value stack          Label   Instruction     Argument
+   []                           SETUP_EXCEPT    L1
+   []                           <code for S>
+   []                           POP_BLOCK
+   []                           JUMP_FORWARD    L0
+
+   [tb, val, exc]       L1:     DUP                             )
+   [tb, val, exc, exc]          <evaluate E1>                   )
+   [tb, val, exc, exc, E1]      COMPARE_OP      EXC_MATCH       ) only if E1
+   [tb, val, exc, 1-or-0]       POP_JUMP_IF_FALSE       L2      )
+   [tb, val, exc]               POP
+   [tb, val]                    <assign to V1>  (or POP if no V1)
+   [tb]                         POP
+   []                           <code for S1>
+                                POP_EXCEPT
+                                JUMP_FORWARD    L0
+
+   [tb, val, exc]       L2:     DUP
+   .............................etc.......................
+
+   [tb, val, exc]       Ln+1:   END_FINALLY     # re-raise exception
+
+   []                   L0:     <next statement>
+
+   Of course, parts are not generated if Vi or Ei is not present.
+-}
+
+compileTry :: StatementSpan -> Compile ()
+compileTry (Try {..}) = do
+   firstHandler <- newLabel                      -- L1
+   emitCodeArg SETUP_EXCEPT firstHandler         -- pushes handler onto block stack
+   withFrameBlock FrameBlockExcept $ do
+      mapM_ compile try_body                     -- <code for S>
+      emitCodeNoArg POP_BLOCK                    -- pops handler off block stack
+   end <- newLabel                               -- L0
+   emitCodeArg JUMP_FORWARD end
+   compileHandlers end firstHandler try_excepts
+   labelNextInstruction end                      -- <next statement>
+compileTry other =
+   error $ "Unexpected statement when compiling a try-except: " ++ prettyText other 
+
+-- Compile a sequence of exception handlers
+compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
+compileHandlers _end handlerLabel [] = do
+   labelNextInstruction handlerLabel             -- Ln+1, # re-raise exception
+   emitCodeNoArg END_FINALLY
+compileHandlers end handlerLabel (Handler {..} : rest) = do
+   labelNextInstruction handlerLabel
+   nextLabel <- newLabel 
+   compileHandlerClause nextLabel handler_clause
+   emitCodeNoArg POP_TOP                         -- pop the traceback (tb) off the stack
+   mapM_ compile handler_suite                   -- <code for S1, S2 ..>
+   emitCodeNoArg POP_EXCEPT                      -- pop handler off the block stack
+   emitCodeArg JUMP_FORWARD end
+   compileHandlers end nextLabel rest 
+
+-- enter here with stack == (s ++ [tb, val, exc]), leave with stack == s
+compileHandlerClause :: Word16 -> ExceptClauseSpan -> Compile ()
+compileHandlerClause nextHandler (ExceptClause {..}) = do
+   case except_clause of
+      Nothing -> do
+         emitCodeNoArg POP_TOP                  -- pop exc off the stack
+         emitCodeNoArg POP_TOP                  -- pop val off the stack
+      Just (target, asExpr) -> do
+         emitCodeNoArg DUP_TOP                  -- duplicate exc on stack
+         compile target                         -- <evaluate E1>
+         emitCodeArg COMPARE_OP exactMatchOp    -- compare E1 to exc
+         emitCodeArg POP_JUMP_IF_FALSE nextHandler -- pop True/False and if no match try next handler
+         emitCodeNoArg POP_TOP                  -- pop exc off the stack
+         case asExpr of
+            Nothing -> emitCodeNoArg POP_TOP    -- pop val off the stack
+            -- XXX we should del this name at the end.
+            Just expr -> compileAssignTo expr   -- assign the exception to the as name, will remove val from stack
+   where
+   -- The code for an exact match operator.
+   exactMatchOp :: Word16
+   exactMatchOp = 10
 
 withDecorators :: [DecoratorSpan] -> Compile () -> Compile ()
 withDecorators decorators comp = do
@@ -702,21 +791,6 @@ compileDefaultParams = foldM compileParam 0
             return $ count + 1
    compileParam count _other = return count
 
--- Compile a sequence of exception handlers
-compileHandlers :: Word16 -> Word16 -> [HandlerSpan] -> Compile ()
-compileHandlers _end handlerLabel [] = do
-   labelNextInstruction handlerLabel
-   emitCodeNoArg END_FINALLY
-compileHandlers end handlerLabel (Handler {..} : rest) = do
-   labelNextInstruction handlerLabel
-   nextLabel <- newLabel 
-   compileHandlerClause nextLabel handler_clause
-   emitCodeNoArg POP_TOP
-   mapM_ compile handler_suite
-   emitCodeNoArg POP_EXCEPT
-   emitCodeArg JUMP_FORWARD end
-   compileHandlers end nextLabel rest 
-
 -- Compile a 'from module import'.
 compileFromModule :: ImportRelativeSpan -> Compile ()
 -- XXX what to do about the initial dots?
@@ -736,25 +810,6 @@ fromItemsIdentifiers (FromItems {..}) =
    where
    fromItemIdentifier :: FromItemSpan -> Identifier
    fromItemIdentifier (FromItem {..}) = ident_string $ from_item_name
-
-compileHandlerClause :: Word16 -> ExceptClauseSpan -> Compile ()
-compileHandlerClause nextHandler (ExceptClause {..}) = do
-   case except_clause of
-      Nothing -> emitCodeNoArg POP_TOP >> emitCodeNoArg POP_TOP
-      Just (target, asExpr) -> do
-         emitCodeNoArg DUP_TOP -- make a copy of the exception value on the stack
-         compile target        -- compile the exception type to match against 
-         emitCodeArg COMPARE_OP exactMatchOp -- compare the actual exception with the match
-         emitCodeArg POP_JUMP_IF_FALSE nextHandler -- goto next handler if they don't match
-         emitCodeNoArg POP_TOP -- pop the True off the stack
-         case asExpr of
-            Nothing -> emitCodeNoArg POP_TOP -- pop the exception off the stack
-            -- XXX we should del this name at the end.
-            Just expr -> compileAssignTo expr -- assign the exception to the as name
-   where
-   -- The code for an exact match operator.
-   exactMatchOp :: Word16
-   exactMatchOp = 10
 
 -- compile multiple possible assignments:
 -- x = y = z = rhs
