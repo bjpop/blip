@@ -632,7 +632,7 @@ compileTryFinally stmt@(Try {..}) = do
    labelNextInstruction body
    withFrameBlock FrameBlockFinallyTry $ do
       if length try_excepts > 0
-         then compileTry stmt 
+         then compileTryExcept stmt 
          else mapM_ compile try_body
       emitCodeNoArg POP_BLOCK
    _ <- compileConstantEmit Blip.None
