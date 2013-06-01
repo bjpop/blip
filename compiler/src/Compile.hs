@@ -618,7 +618,33 @@ instance Compilable RaiseExprSpan where
 -}
 
 compileTry :: StatementSpan -> Compile ()
-compileTry (Try {..}) = do
+compileTry stmt@(Try {..})
+   | length try_finally == 0 = compileTryExcept stmt
+   | otherwise = compileTryFinally stmt
+compileTry other =
+   error $ "Unexpected statement when compiling a try-except: " ++ prettyText other 
+
+compileTryFinally :: StatementSpan -> Compile ()
+compileTryFinally stmt@(Try {..}) = do
+   end <- newLabel
+   emitCodeArg SETUP_FINALLY end
+   body <- newLabel
+   labelNextInstruction body
+   withFrameBlock FrameBlockFinallyTry $ do
+      if length try_excepts > 0
+         then compileTry stmt 
+         else mapM_ compile try_body
+      emitCodeNoArg POP_BLOCK
+   _ <- compileConstantEmit Blip.None
+   labelNextInstruction end
+   withFrameBlock FrameBlockFinallyEnd $ do
+      mapM_ compile try_finally
+      emitCodeNoArg END_FINALLY
+compileTryFinally other =
+   error $ "Unexpected statement when compiling a try-except: " ++ prettyText other 
+
+compileTryExcept :: StatementSpan -> Compile ()
+compileTryExcept (Try {..}) = do
    firstHandler <- newLabel                      -- L1
    emitCodeArg SETUP_EXCEPT firstHandler         -- pushes handler onto block stack
    withFrameBlock FrameBlockExcept $ do
@@ -631,7 +657,7 @@ compileTry (Try {..}) = do
    labelNextInstruction orElse
    mapM_ compile try_else
    labelNextInstruction end                      -- L0: <next statement>
-compileTry other =
+compileTryExcept other =
    error $ "Unexpected statement when compiling a try-except: " ++ prettyText other 
 
 -- Compile a sequence of exception handlers
@@ -644,8 +670,9 @@ compileHandlers end handlerLabel (Handler {..} : rest) = do
    nextLabel <- newLabel 
    compileHandlerClause nextLabel handler_clause
    emitCodeNoArg POP_TOP                         -- pop the traceback (tb) off the stack
-   mapM_ compile handler_suite                   -- <code for S1, S2 ..>
-   emitCodeNoArg POP_EXCEPT                      -- pop handler off the block stack
+   withFrameBlock FrameBlockFinallyTry $ do
+      mapM_ compile handler_suite                   -- <code for S1, S2 ..>
+      emitCodeNoArg POP_EXCEPT                      -- pop handler off the block stack
    emitCodeArg JUMP_FORWARD end
    compileHandlers end nextLabel rest 
 
