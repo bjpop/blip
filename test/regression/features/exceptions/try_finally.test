@@ -1,0 +1,7 @@
+blip try_finally.py && python3.3 try_finally.pyc
+<<<
+>>>
+try
+finally
+>>>2
+>>>=0
