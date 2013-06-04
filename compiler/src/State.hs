@@ -314,6 +314,7 @@ emitCode instruction = do
    -- Ensure current labels are used only once.
    modifyBlockState $ \s -> s { state_labelNextInstruction = [] }
    instructionIndex <- incInstructionIndex instruction
+   -- Map each label to its instruction index
    forM_ labels $ \label -> updateLabelMap label instructionIndex
    let annotatedInstruction =
           AnnotatedCode { annotatedCode_bytecode = instruction
