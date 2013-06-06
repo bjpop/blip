@@ -60,7 +60,8 @@ import State
    , getNestedScope, ifDump, getLocalScope
    , indexedVarSetKeys, emitReadVar, emitWriteVar, emitDeleteVar
    , lookupNameVar, lookupClosureVar, setFlag
-   , peekFrameBlock, withFrameBlock, setFastLocals, setArgCount )
+   , peekFrameBlock, withFrameBlock, setFastLocals, setArgCount
+   , setLineNumber )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -74,7 +75,7 @@ import Blip.Marshal as Blip
 import Blip.Bytecode (Opcode (..), encode)
 import Language.Python.Version3.Parser (parseModule)
 import Language.Python.Common.AST as AST
-   ( ModuleSpan, Module (..), StatementSpan, Statement (..)
+   ( Annotated (..), ModuleSpan, Module (..), StatementSpan, Statement (..)
    , ExprSpan, Expr (..), Ident (..), ArgumentSpan, Argument (..)
    , OpSpan, Op (..), Handler (..), HandlerSpan, ExceptClause (..)
    , ExceptClauseSpan, ImportItem (..), ImportItemSpan, ImportRelative (..)
@@ -93,7 +94,7 @@ import System.FilePath ((<.>), takeBaseName)
 import System.IO (openFile, IOMode(..), hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
 import Data.Traversable as Traversable (mapM)
-import qualified Data.ByteString.Lazy as B (empty)
+import qualified Data.ByteString.Lazy as B (pack)
 import Data.ByteString.Lazy.UTF8 (fromString)
 import Data.List (intersperse)
 import Control.Monad (unless, forM_, when, replicateM_, foldM)
@@ -203,6 +204,7 @@ makeObject = do
    argcount <- getBlockState state_argcount
    flags <- getBlockState state_flags
    fastLocals <- getBlockState state_fastLocals
+   lineNumberTable <- compileLineNumberTable 
    let code = map annotatedCode_bytecode annotatedCode 
        localVarNames = map Unicode $ indexedVarSetKeys fastLocals
        maxStackDepth = maxBound 
@@ -228,7 +230,8 @@ makeObject = do
                    , filename = Unicode pyFileName
                    , name = Unicode objectName
                    , firstlineno = 0
-                   , lnotab = String B.empty
+                   -- , lnotab = String B.empty
+                   , lnotab = lineNumberTable
                    }
          return obj
    where
@@ -242,283 +245,292 @@ makeObject = do
 
 instance Compilable StatementSpan where
    type CompileResult StatementSpan = ()
-   compile (Assign {..}) = do
-      compile assign_expr
-      compileAssignments assign_to
-   compile (AugmentedAssign {..}) =
-      case aug_assign_to of
-         Var {..} -> do
-            let varIdent = ident_string var_ident
-            emitReadVar varIdent
-            compile aug_assign_expr
-            compile aug_assign_op
-            emitWriteVar varIdent
-         Subscript {..} -> do
-            compile subscriptee
-            compile subscript_expr
-            emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
-            emitCodeNoArg BINARY_SUBSCR
-            compile aug_assign_expr
-            compile aug_assign_op
-            emitCodeNoArg ROT_THREE
-            emitCodeNoArg STORE_SUBSCR
-         SlicedExpr {..} -> do
-            compile slicee
-            compileSlices slices
-            emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
-            emitCodeNoArg BINARY_SUBSCR
-            compile aug_assign_expr
-            compile aug_assign_op
-            emitCodeNoArg ROT_THREE
-            emitCodeNoArg STORE_SUBSCR
-         expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
-            compile $ left_op_arg expr
-            emitCodeNoArg DUP_TOP
-            index <- lookupNameVar $ ident_string $ var_ident
-            emitCodeArg LOAD_ATTR index 
-            compile aug_assign_expr
-            compile aug_assign_op
-            emitCodeNoArg ROT_TWO
-            emitCodeArg STORE_ATTR index 
-         other -> error $ "unexpected expression in augmented assignment: " ++ prettyText other
-   compile (Return { return_expr = Nothing }) = returnNone
-   compile (Return { return_expr = Just expr }) =  
-      compile expr >> emitCodeNoArg RETURN_VALUE
-   compile (Pass {}) = return ()
-   compile (StmtExpr {..}) = 
-      unless (isPureExpr stmt_expr) $ 
-         compile stmt_expr >> emitCodeNoArg POP_TOP
-   compile (Conditional {..}) = do
-      restLabel <- newLabel
-      mapM_ (compileGuard restLabel) cond_guards 
-      mapM_ compile cond_else
-      labelNextInstruction restLabel
-   compile (While {..}) = do
-      startLoop <- newLabel
-      endLoop <- newLabel
+   compile stmt =
+      setLineNumber (annot stmt) >>
+      compileStmt stmt
+  
+compileStmt :: StatementSpan -> Compile ()
+compileStmt (Assign {..}) = do
+   compile assign_expr
+   compileAssignments assign_to
+compileStmt (AugmentedAssign {..}) =
+   case aug_assign_to of
+      Var {..} -> do
+         let varIdent = ident_string var_ident
+         emitReadVar varIdent
+         compile aug_assign_expr
+         compile aug_assign_op
+         emitWriteVar varIdent
+      Subscript {..} -> do
+         compile subscriptee
+         compile subscript_expr
+         emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
+         emitCodeNoArg BINARY_SUBSCR
+         compile aug_assign_expr
+         compile aug_assign_op
+         emitCodeNoArg ROT_THREE
+         emitCodeNoArg STORE_SUBSCR
+      SlicedExpr {..} -> do
+         compile slicee
+         compileSlices slices
+         emitCodeNoArg DUP_TOP_TWO -- avoids re-doing the above two later when we store
+         emitCodeNoArg BINARY_SUBSCR
+         compile aug_assign_expr
+         compile aug_assign_op
+         emitCodeNoArg ROT_THREE
+         emitCodeNoArg STORE_SUBSCR
+      expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
+         compile $ left_op_arg expr
+         emitCodeNoArg DUP_TOP
+         index <- lookupNameVar $ ident_string $ var_ident
+         emitCodeArg LOAD_ATTR index 
+         compile aug_assign_expr
+         compile aug_assign_op
+         emitCodeNoArg ROT_TWO
+         emitCodeArg STORE_ATTR index 
+      other -> error $ "unexpected expression in augmented assignment: " ++ prettyText other
+compileStmt (Return { return_expr = Nothing }) = returnNone
+compileStmt (Return { return_expr = Just expr }) =  
+   compile expr >> emitCodeNoArg RETURN_VALUE
+compileStmt (Pass {}) = return ()
+compileStmt (StmtExpr {..}) = 
+   unless (isPureExpr stmt_expr) $ 
+      compile stmt_expr >> emitCodeNoArg POP_TOP
+compileStmt (Conditional {..}) = do
+   restLabel <- newLabel
+   mapM_ (compileGuard restLabel) cond_guards 
+   mapM_ compile cond_else
+   labelNextInstruction restLabel
+compileStmt (While {..}) = do
+   startLoop <- newLabel
+   endLoop <- newLabel
+   anchor <- newLabel
+   emitCodeArg SETUP_LOOP endLoop
+   withFrameBlock (FrameBlockLoop startLoop) $ do
+       labelNextInstruction startLoop
+       compile while_cond
+       emitCodeArg POP_JUMP_IF_FALSE anchor
+       mapM_ compile while_body
+       emitCodeArg JUMP_ABSOLUTE startLoop
+       labelNextInstruction anchor 
+       emitCodeNoArg POP_BLOCK
+   mapM_ compile while_else
+   labelNextInstruction endLoop
+compileStmt (For {..}) = do
+   startLoop <- newLabel
+   endLoop <- newLabel
+   withFrameBlock (FrameBlockLoop startLoop) $ do
       anchor <- newLabel
       emitCodeArg SETUP_LOOP endLoop
-      withFrameBlock (FrameBlockLoop startLoop) $ do
-          labelNextInstruction startLoop
-          compile while_cond
-          emitCodeArg POP_JUMP_IF_FALSE anchor
-          mapM_ compile while_body
-          emitCodeArg JUMP_ABSOLUTE startLoop
-          labelNextInstruction anchor 
-          emitCodeNoArg POP_BLOCK
-      mapM_ compile while_else
-      labelNextInstruction endLoop
-   compile (For {..}) = do
-      startLoop <- newLabel
-      endLoop <- newLabel
-      withFrameBlock (FrameBlockLoop startLoop) $ do
-         anchor <- newLabel
-         emitCodeArg SETUP_LOOP endLoop
-         compile for_generator
-         emitCodeNoArg GET_ITER
-         labelNextInstruction startLoop
-         emitCodeArg FOR_ITER anchor
-         let num_targets = length for_targets
-         when (num_targets > 1) $ do
-            emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
-         mapM_ compileAssignTo for_targets 
-         mapM_ compile for_body 
-         emitCodeArg JUMP_ABSOLUTE startLoop
-         labelNextInstruction anchor
-         emitCodeNoArg POP_BLOCK
-      mapM_ compile for_else
-      labelNextInstruction endLoop
-   compile stmt@(Fun {..}) = compileFun stmt []
-   compile stmt@(Class {..}) = compileClass stmt []
-   -- XXX assertions appear to be turned off if the code is compiled
-   -- for optimisation
-   -- If the assertion expression is a tuple of non-zero length, then
-   -- it is always True: CPython warns about this
-   compile (Assert {..}) = do
-      case assert_exprs of
-         test_expr:restAssertExprs -> do
-            compile test_expr
-            end <- newLabel
-            emitCodeArg POP_JUMP_IF_TRUE end
-            assertionErrorVar <- lookupNameVar "AssertionError"
-            emitCodeArg LOAD_GLOBAL assertionErrorVar
-            case restAssertExprs of
-               assertMsgExpr:_ -> do
-                  compile assertMsgExpr
-                  emitCodeArg CALL_FUNCTION 1
-               _other -> return ()
-            emitCodeArg RAISE_VARARGS 1
-            labelNextInstruction end
-         _other -> error "assert with no test"
-   compile stmt@(Try {..}) = compileTry stmt
-   compile (Import {..}) = mapM_ compile import_items
-   -- XXX need to handle from __future__ 
-   compile (FromImport {..}) = do
-      let level = 0 -- XXX this should be the level of nesting
-      compileConstantEmit $ Blip.Int level
-      let names = fromItemsIdentifiers from_items 
-          namesTuple = Blip.Tuple $ map Unicode names
-      compileConstantEmit namesTuple
-      compileFromModule from_module
-      case from_items of
-         ImportEverything {} -> do
-            emitCodeNoArg IMPORT_STAR
-         FromItems {..} -> do
-            forM_ from_items_items $ \FromItem {..} -> do
-                index <- lookupNameVar $ ident_string from_item_name
-                emitCodeArg IMPORT_FROM index
-                let storeName = case from_as_name of
-                       Nothing -> from_item_name
-                       Just asName -> asName
-                emitWriteVar $ ident_string storeName
-            emitCodeNoArg POP_TOP
-   -- XXX should check that we are inside a loop
-   compile (Break {}) = emitCodeNoArg BREAK_LOOP
-   compile (Continue {}) = do
+      compile for_generator
+      emitCodeNoArg GET_ITER
+      labelNextInstruction startLoop
+      emitCodeArg FOR_ITER anchor
+      let num_targets = length for_targets
+      when (num_targets > 1) $ do
+         emitCodeArg UNPACK_SEQUENCE $ fromIntegral num_targets
+      mapM_ compileAssignTo for_targets 
+      mapM_ compile for_body 
+      emitCodeArg JUMP_ABSOLUTE startLoop
+      labelNextInstruction anchor
+      emitCodeNoArg POP_BLOCK
+   mapM_ compile for_else
+   labelNextInstruction endLoop
+compileStmt stmt@(Fun {..}) = compileFun stmt []
+compileStmt stmt@(Class {..}) = compileClass stmt []
+-- XXX assertions appear to be turned off if the code is compiled
+-- for optimisation
+-- If the assertion expression is a tuple of non-zero length, then
+-- it is always True: CPython warns about this
+compileStmt (Assert {..}) = do
+   case assert_exprs of
+      test_expr:restAssertExprs -> do
+         compile test_expr
+         end <- newLabel
+         emitCodeArg POP_JUMP_IF_TRUE end
+         assertionErrorVar <- lookupNameVar "AssertionError"
+         emitCodeArg LOAD_GLOBAL assertionErrorVar
+         case restAssertExprs of
+            assertMsgExpr:_ -> do
+               compile assertMsgExpr
+               emitCodeArg CALL_FUNCTION 1
+            _other -> return ()
+         emitCodeArg RAISE_VARARGS 1
+         labelNextInstruction end
+      _other -> error "assert with no test"
+compileStmt stmt@(Try {..}) = compileTry stmt
+compileStmt (Import {..}) = mapM_ compile import_items
+-- XXX need to handle from __future__ 
+compileStmt (FromImport {..}) = do
+   let level = 0 -- XXX this should be the level of nesting
+   compileConstantEmit $ Blip.Int level
+   let names = fromItemsIdentifiers from_items 
+       namesTuple = Blip.Tuple $ map Unicode names
+   compileConstantEmit namesTuple
+   compileFromModule from_module
+   case from_items of
+      ImportEverything {} -> do
+         emitCodeNoArg IMPORT_STAR
+      FromItems {..} -> do
+         forM_ from_items_items $ \FromItem {..} -> do
+             index <- lookupNameVar $ ident_string from_item_name
+             emitCodeArg IMPORT_FROM index
+             let storeName = case from_as_name of
+                    Nothing -> from_item_name
+                    Just asName -> asName
+             emitWriteVar $ ident_string storeName
+         emitCodeNoArg POP_TOP
+-- XXX should check that we are inside a loop
+compileStmt (Break {}) = emitCodeNoArg BREAK_LOOP
+compileStmt (Continue {}) = do
+   maybeFrameBlockInfo <- peekFrameBlock
+   case maybeFrameBlockInfo of
+      Nothing -> error loopError
+      Just (FrameBlockLoop label) -> emitCodeArg JUMP_ABSOLUTE label 
+      Just FrameBlockFinallyEnd ->
+         error finallyError
+      Just _other -> checkFrameBlocks
+   where
+   -- keep blocking the frame block stack until we either find
+   -- a loop entry, otherwise generate an error
+   checkFrameBlocks :: Compile ()
+   checkFrameBlocks = do
       maybeFrameBlockInfo <- peekFrameBlock
       case maybeFrameBlockInfo of
          Nothing -> error loopError
-         Just (FrameBlockLoop label) -> emitCodeArg JUMP_ABSOLUTE label 
-         Just FrameBlockFinallyEnd ->
-            error finallyError
+         Just FrameBlockFinallyEnd -> error finallyError 
+         Just (FrameBlockLoop label) ->
+            emitCodeArg CONTINUE_LOOP label
          Just _other -> checkFrameBlocks
-      where
-      -- keep blocking the frame block stack until we either find
-      -- a loop entry, otherwise generate an error
-      checkFrameBlocks :: Compile ()
-      checkFrameBlocks = do
-         maybeFrameBlockInfo <- peekFrameBlock
-         case maybeFrameBlockInfo of
-            Nothing -> error loopError
-            Just FrameBlockFinallyEnd -> error finallyError 
-            Just (FrameBlockLoop label) ->
-               emitCodeArg CONTINUE_LOOP label
-            Just _other -> checkFrameBlocks
-      loopError = "'continue' not properly in loop"
-      finallyError = "'continue' not supported inside 'finally' clause"
-   compile (NonLocal {}) = return ()
-   compile (Global {}) = return ()
-   compile (Decorated {..}) =
-      case decorated_def of
-         Fun {} -> compileFun decorated_def decorated_decorators
-         Class {} -> compileClass decorated_def decorated_decorators
-         other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
-   compile (Delete {..}) = mapM_ compileDelete del_exprs
-   compile stmt@(With {..})
-      -- desugar with statements containing multiple contexts into nested
-      -- with statements containing single contexts
-      | length with_context > 1 = compileWith $ desugarWith stmt 
-      | otherwise = compileWith stmt
-   compile (Raise {..}) = compile raise_expr
-   compile other = error $ "Unsupported statement:\n" ++ prettyText other
+   loopError = "'continue' not properly in loop"
+   finallyError = "'continue' not supported inside 'finally' clause"
+compileStmt (NonLocal {}) = return ()
+compileStmt (Global {}) = return ()
+compileStmt (Decorated {..}) =
+   case decorated_def of
+      Fun {} -> compileFun decorated_def decorated_decorators
+      Class {} -> compileClass decorated_def decorated_decorators
+      other -> error $ "Decorated statement is not a function or a class: " ++ prettyText other
+compileStmt (Delete {..}) = mapM_ compileDelete del_exprs
+compileStmt stmt@(With {..})
+   -- desugar with statements containing multiple contexts into nested
+   -- with statements containing single contexts
+   | length with_context > 1 = compileWith $ desugarWith stmt 
+   | otherwise = compileWith stmt
+compileStmt (Raise {..}) = compile raise_expr
+compileStmt other = error $ "Unsupported statement:\n" ++ prettyText other
 
 instance Compilable ExprSpan where
    type CompileResult ExprSpan = ()
-   compile (Var { var_ident = ident }) = do
-      emitReadVar $ ident_string ident
-   compile expr@(AST.Strings {}) =
-      compileConstantEmit $ constantToPyObject expr 
-   compile expr@(AST.ByteStrings {}) =
-      compileConstantEmit $ constantToPyObject expr 
-   compile expr@(AST.Int {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile expr@(AST.Float {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile expr@(AST.Imaginary {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile expr@(AST.Bool {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile expr@(AST.None {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile expr@(AST.Ellipsis {}) =
-      compileConstantEmit $ constantToPyObject expr
-   compile (AST.Paren {..}) = compile paren_expr
-   compile (AST.CondExpr {..}) = do
-      compile ce_condition
-      falseLabel <- newLabel
-      emitCodeArg POP_JUMP_IF_FALSE falseLabel
-      compile ce_true_branch
-      restLabel <- newLabel
-      emitCodeArg JUMP_FORWARD restLabel
-      labelNextInstruction falseLabel 
-      compile ce_false_branch
-      labelNextInstruction restLabel
-   compile expr@(AST.Tuple {..})
-      | isPyObjectExpr expr =
-           compileConstantEmit $ constantToPyObject expr
-      | otherwise = do
-           mapM_ compile tuple_exprs
-           emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
-   compile (AST.List {..}) = do
-      mapM_ compile list_exprs
-      emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
-   compile (AST.Set {..}) = do
-      mapM_ compile set_exprs
-      emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
-   compile (Dictionary {..}) = do
-      emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
-      forM_ dict_mappings $ \(key, value) -> do
-         compile value
-         compile key
-         emitCodeNoArg STORE_MAP
-   compile (ListComp {..}) = do
-      let initStmt = [mkAssignVar resultName (mkList [])]
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "append" expr
-          returnStmt = [mkReturn $ mkVar $ resultName]
-      compileComprehension "<listcomp>" initStmt updater returnStmt list_comprehension
-   compile (SetComp {..}) = do
-      let initStmt = [mkAssignVar resultName (mkSet [])]
-          updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "add" expr
-          returnStmt = [mkReturn $ mkVar $ resultName]
-      compileComprehension "<setcomp>" initStmt updater returnStmt set_comprehension
-   compile (DictComp {..}) = do
-      let initStmt = [mkAssignVar resultName (mkDict [])]
-          updater = \(key, val) -> 
-             mkAssign (mkSubscript (mkVar $ resultName) key) val
-          returnStmt = [mkReturn $ mkVar $ resultName]
-      compileComprehension "<dictcomp>" initStmt updater returnStmt dict_comprehension
-   compile (Generator {..}) = do
-      let updater = \expr -> mkStmtExpr $ mkYield expr
-      compileComprehension "<gencomp>" [] updater [] gen_comprehension
-   compile (Yield { yield_expr = Nothing }) =
-      compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
-   compile (Yield { yield_expr = Just expr }) =
-      compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
-   compile (Call {..}) = do
-      compile call_fun
-      compileCall 0 call_args
-   compile (Subscript {..}) = do
-      compile subscriptee
-      compile subscript_expr
-      emitCodeNoArg BINARY_SUBSCR
-   compile (SlicedExpr {..}) = do
-      compile slicee
-      compileSlices slices
-      emitCodeNoArg BINARY_SUBSCR
-   compile exp@(BinaryOp {..})
-      | isBoolean operator = compileBoolOpExpr exp
-      | isComparison operator = compileCompareOpExpr exp
-      | isDot operator = compileDot exp 
-      | otherwise = do 
-           compile left_op_arg
-           compile right_op_arg
-           compileOp operator 
-   compile (UnaryOp {..}) = do
-      compile op_arg
-      compileUnaryOp operator
-   compile (Lambda {..}) = do
-      funBodyObj <- nestedBlock FunctionContext expr_annot $ do
-         -- make the first constant None, to indicate no doc string
-         -- for the lambda
-         _ <- compileConstant Blip.None
-         compile lambda_body
-         emitCodeNoArg RETURN_VALUE
-         assemble
-         makeObject
-      numDefaults <- compileDefaultParams lambda_args
-      -- compileClosure funName funBodyObj numDefaults
-      compileClosure "<lambda>" funBodyObj numDefaults
-   compile other = error $ "Unsupported expr:\n" ++ prettyText other
+   compile expr = 
+      setLineNumber (annot expr) >>
+      compileExpr expr
+
+compileExpr :: ExprSpan -> Compile ()
+compileExpr (Var { var_ident = ident }) = do
+   emitReadVar $ ident_string ident
+compileExpr expr@(AST.Strings {}) =
+   compileConstantEmit $ constantToPyObject expr 
+compileExpr expr@(AST.ByteStrings {}) =
+   compileConstantEmit $ constantToPyObject expr 
+compileExpr expr@(AST.Int {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr expr@(AST.Float {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr expr@(AST.Imaginary {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr expr@(AST.Bool {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr expr@(AST.None {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr expr@(AST.Ellipsis {}) =
+   compileConstantEmit $ constantToPyObject expr
+compileExpr (AST.Paren {..}) = compile paren_expr
+compileExpr (AST.CondExpr {..}) = do
+   compile ce_condition
+   falseLabel <- newLabel
+   emitCodeArg POP_JUMP_IF_FALSE falseLabel
+   compile ce_true_branch
+   restLabel <- newLabel
+   emitCodeArg JUMP_FORWARD restLabel
+   labelNextInstruction falseLabel 
+   compile ce_false_branch
+   labelNextInstruction restLabel
+compileExpr expr@(AST.Tuple {..})
+   | isPyObjectExpr expr =
+        compileConstantEmit $ constantToPyObject expr
+   | otherwise = do
+        mapM_ compile tuple_exprs
+        emitCodeArg BUILD_TUPLE $ fromIntegral $ length tuple_exprs
+compileExpr (AST.List {..}) = do
+   mapM_ compile list_exprs
+   emitCodeArg BUILD_LIST $ fromIntegral $ length list_exprs
+compileExpr (AST.Set {..}) = do
+   mapM_ compile set_exprs
+   emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
+compileExpr (Dictionary {..}) = do
+   emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
+   forM_ dict_mappings $ \(key, value) -> do
+      compile value
+      compile key
+      emitCodeNoArg STORE_MAP
+compileExpr (ListComp {..}) = do
+   let initStmt = [mkAssignVar resultName (mkList [])]
+       updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "append" expr
+       returnStmt = [mkReturn $ mkVar $ resultName]
+   compileComprehension "<listcomp>" initStmt updater returnStmt list_comprehension
+compileExpr (SetComp {..}) = do
+   let initStmt = [mkAssignVar resultName (mkSet [])]
+       updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "add" expr
+       returnStmt = [mkReturn $ mkVar $ resultName]
+   compileComprehension "<setcomp>" initStmt updater returnStmt set_comprehension
+compileExpr (DictComp {..}) = do
+   let initStmt = [mkAssignVar resultName (mkDict [])]
+       updater = \(key, val) -> 
+          mkAssign (mkSubscript (mkVar $ resultName) key) val
+       returnStmt = [mkReturn $ mkVar $ resultName]
+   compileComprehension "<dictcomp>" initStmt updater returnStmt dict_comprehension
+compileExpr (Generator {..}) = do
+   let updater = \expr -> mkStmtExpr $ mkYield expr
+   compileComprehension "<gencomp>" [] updater [] gen_comprehension
+compileExpr (Yield { yield_expr = Nothing }) =
+   compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
+compileExpr (Yield { yield_expr = Just expr }) =
+   compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
+compileExpr (Call {..}) = do
+   compile call_fun
+   compileCall 0 call_args
+compileExpr (Subscript {..}) = do
+   compile subscriptee
+   compile subscript_expr
+   emitCodeNoArg BINARY_SUBSCR
+compileExpr (SlicedExpr {..}) = do
+   compile slicee
+   compileSlices slices
+   emitCodeNoArg BINARY_SUBSCR
+compileExpr exp@(BinaryOp {..})
+   | isBoolean operator = compileBoolOpExpr exp
+   | isComparison operator = compileCompareOpExpr exp
+   | isDot operator = compileDot exp 
+   | otherwise = do 
+        compile left_op_arg
+        compile right_op_arg
+        compileOp operator 
+compileExpr (UnaryOp {..}) = do
+   compile op_arg
+   compileUnaryOp operator
+compileExpr (Lambda {..}) = do
+   funBodyObj <- nestedBlock FunctionContext expr_annot $ do
+      -- make the first constant None, to indicate no doc string
+      -- for the lambda
+      _ <- compileConstant Blip.None
+      compile lambda_body
+      emitCodeNoArg RETURN_VALUE
+      assemble
+      makeObject
+   numDefaults <- compileDefaultParams lambda_args
+   compileClosure "<lambda>" funBodyObj numDefaults
+compileExpr other = error $ "Unsupported expr:\n" ++ prettyText other
 
 instance Compilable AssignOpSpan where
    type CompileResult AssignOpSpan = ()
@@ -1302,3 +1314,88 @@ maybeDumpAST ast = do
    ifDump DumpAST $ do
       liftIO $ putStrLn "Abstract Syntax Tree:"
       liftIO $ putStrLn $ show ast
+
+{- 
+   From Cpython: Objects/lnotab_notes.txt
+
+Code objects store a field named co_lnotab.  This is an array of unsigned bytes
+disguised as a Python string.  It is used to map bytecode offsets to source code
+line #s for tracebacks and to identify line number boundaries for line tracing.
+
+The array is conceptually a compressed list of
+    (bytecode offset increment, line number increment)
+pairs.  The details are important and delicate, best illustrated by example:
+
+    byte code offset    source code line number
+        0                   1
+        6                   2
+       50                   7
+      350                 307
+      361                 308
+
+Instead of storing these numbers literally, we compress the list by storing only
+the increments from one row to the next.  Conceptually, the stored list might
+look like:
+
+    0, 1,  6, 1,  44, 5,  300, 300,  11, 1
+
+The above doesn't really work, but it's a start. Note that an unsigned byte
+can't hold negative values, or values larger than 255, and the above example
+contains two such values. So we make two tweaks:  
+
+
+ (a) there's a deep assumption that byte code offsets and their corresponding
+ line #s both increase monotonically, and
+ (b) if at least one column jumps by more than 255 from one row to the next,
+ more than one pair is written to the table. In case #b, there's no way to know
+ from looking at the table later how many were written.  That's the delicate
+ part.  A user of co_lnotab desiring to find the source line number
+ corresponding to a bytecode address A should do something like this
+
+    lineno = addr = 0
+    for addr_incr, line_incr in co_lnotab:
+        addr += addr_incr
+        if addr > A:
+            return lineno
+        lineno += line_incr
+
+(In C, this is implemented by PyCode_Addr2Line().)  In order for this to work,
+when the addr field increments by more than 255, the line # increment in each
+pair generated must be 0 until the remaining addr increment is < 256.  So, in
+the example above, assemble_lnotab in compile.c should not (as was actually done
+until 2.2) expand 300, 300 to
+    255, 255, 45, 45,
+but to
+    255, 0, 45, 255, 0, 45.
+-}
+
+-- should produce a bytestring
+compileLineNumberTable :: Compile PyObject
+compileLineNumberTable = do
+   offsetToLine <- reverse `fmap` getBlockState state_lineNumberTable
+   let compressedTable = compress (0, 0) offsetToLine 
+       bs = B.pack $ concat [ [fromIntegral offset, fromIntegral line] | (offset, line) <- compressedTable ]
+   return Blip.String { string = bs }
+   where
+   compress :: (Word16, Int) -> [(Word16, Int)] -> [(Word16, Int)]
+   compress _prev [] = []
+   compress (prevOffset, prevLine) (next@(nextOffset, nextLine):rest)
+      -- make sure all increments are non-negative
+      -- skipping any entries which are less than the predecessor
+      | nextLine < prevLine || nextOffset < prevOffset =
+           compress (prevOffset, prevLine) rest
+      | otherwise = chunkDeltas (offsetDelta, lineDelta) ++ compress next rest
+      where 
+      offsetDelta = nextOffset - prevOffset
+      lineDelta = nextLine - prevLine
+
+-- both offsetDelta and lineDelta must be non-negative
+chunkDeltas :: (Word16, Int) -> [(Word16, Int)]
+chunkDeltas (offsetDelta, lineDelta)
+   | offsetDelta < 256 =
+      if lineDelta < 256
+         then [(offsetDelta, lineDelta)]
+         else (offsetDelta, 255) : chunkDeltas (0, lineDelta - 255)
+   | lineDelta < 256 =
+      (255, lineDelta) : chunkDeltas (offsetDelta - 255, 0)
+   | otherwise = (255, 255) : chunkDeltas (offsetDelta - 255, lineDelta - 255)
