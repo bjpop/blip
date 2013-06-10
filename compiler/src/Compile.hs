@@ -204,8 +204,8 @@ makeObject = do
    argcount <- getBlockState state_argcount
    flags <- getBlockState state_flags
    fastLocals <- getBlockState state_fastLocals
-   lineNumberTable <- compileLineNumberTable 
    firstLineNumber <- getBlockState state_firstLineNumber
+   lineNumberTable <- compileLineNumberTable firstLineNumber
    let code = map annotatedCode_bytecode annotatedCode 
        localVarNames = map Unicode $ indexedVarSetKeys fastLocals
        maxStackDepth = maxBound 
@@ -1370,14 +1370,14 @@ but to
 -}
 
 -- Returns the bytestring representation of the compressed line number table
-compileLineNumberTable :: Compile PyObject
-compileLineNumberTable = do
+compileLineNumberTable :: Word32 -> Compile PyObject
+compileLineNumberTable firstLineNumber = do
    offsetToLine <- reverse `fmap` getBlockState state_lineNumberTable
-   let compressedTable = compress (0, 0) offsetToLine 
+   let compressedTable = compress (0, firstLineNumber) offsetToLine 
        bs = B.pack $ concat [ [fromIntegral offset, fromIntegral line] | (offset, line) <- compressedTable ]
    return Blip.String { string = bs }
    where
-   compress :: (Word16, Int) -> [(Word16, Int)] -> [(Word16, Int)]
+   compress :: (Word16, Word32) -> [(Word16, Word32)] -> [(Word16, Word32)]
    compress _prev [] = []
    compress (prevOffset, prevLine) (next@(nextOffset, nextLine):rest)
       -- make sure all increments are non-negative
@@ -1390,7 +1390,7 @@ compileLineNumberTable = do
       lineDelta = nextLine - prevLine
 
 -- both offsetDelta and lineDelta must be non-negative
-chunkDeltas :: (Word16, Int) -> [(Word16, Int)]
+chunkDeltas :: (Word16, Word32) -> [(Word16, Word32)]
 chunkDeltas (offsetDelta, lineDelta)
    | offsetDelta < 256 =
       if lineDelta < 256

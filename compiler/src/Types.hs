@@ -129,8 +129,8 @@ data BlockState = BlockState
    , state_flags :: !Word32
    , state_frameBlockStack :: [FrameBlockInfo]
    , state_context :: !Context
-   , state_lineNumber :: !Int
-   , state_lineNumberTable :: ![(Word16, Int)] -- mapping from bytecode offset to source line number
+   , state_lineNumber :: !Word32
+   , state_lineNumberTable :: ![(Word16, Word32)] -- mapping from bytecode offset to source line number
    , state_firstLineNumber :: !Word32
    }
    deriving (Show)

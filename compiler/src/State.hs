@@ -528,10 +528,11 @@ setLineNumber span =
    case getSpanLine span of
       Nothing -> return ()
       Just line -> do
+         let lineWord32 = fromIntegral line
          oldLineNumber <- getBlockState state_lineNumber
          -- We ensure that line numbers are monotonically increasing.
-         if line > oldLineNumber
-            then modifyBlockState $ \s -> s { state_lineNumber = line }
+         if lineWord32 > oldLineNumber
+            then modifyBlockState $ \s -> s { state_lineNumber = lineWord32 }
             else return ()
 
 setFirstLineNumber :: SrcSpan -> Compile ()
