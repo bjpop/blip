@@ -124,8 +124,13 @@ prettyConsts obj =
 prettyLnotab :: PyObject -> Doc
 prettyLnotab obj =
    case obj of
-      String {..} -> prettyList $ map pretty $ B.unpack string
+      String {..} -> prettyList $ map pretty $ pairs $ B.unpack string
       _other -> text ("lnotab not a string: " ++ show obj)
+   where
+   pairs :: [Word8] -> [(Word8, Word8)]
+   pairs [] = []
+   pairs [_] = error $ "Odd numbered linenotab"
+   pairs (nextCode:nextLine:rest) = (nextCode, nextLine) : pairs rest
 
 readPyc :: Handle -> IO PycFile
 readPyc handle = do
