@@ -1,0 +1,31 @@
+blip back_trace.py && python3.3 back_trace.pyc
+<<<
+>>>
+>>>2
+Traceback (most recent call last):
+  File "back_trace.py", line 14, in <module>
+    main()
+  File "back_trace.py", line 2, in main
+    print (ackermann (3,4))
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 9, in ackermann
+    return ackermann (m-1, 1)
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 9, in ackermann
+    return ackermann (m-1, 1)
+  File "back_trace.py", line 11, in ackermann
+    return ackermann (m-1, ackermann (m, n-1))
+  File "back_trace.py", line 9, in ackermann
+    return ackermann (m-1, 1)
+  File "back_trace.py", line 7, in ackermann
+    return n/0
+ZeroDivisionError: division by zero
+>>>=1
