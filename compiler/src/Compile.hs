@@ -1374,7 +1374,9 @@ compileLineNumberTable :: Word32 -> Compile PyObject
 compileLineNumberTable firstLineNumber = do
    offsetToLine <- reverse `fmap` getBlockState state_lineNumberTable
    let compressedTable = compress (0, firstLineNumber) offsetToLine 
-       bs = B.pack $ concat [ [fromIntegral offset, fromIntegral line] | (offset, line) <- compressedTable ]
+       bs = B.pack $ concat 
+               [ [fromIntegral offset, fromIntegral line] | 
+                    (offset, line) <- compressedTable ]
    return Blip.String { string = bs }
    where
    compress :: (Word16, Word32) -> [(Word16, Word32)] -> [(Word16, Word32)]
@@ -1396,6 +1398,5 @@ chunkDeltas (offsetDelta, lineDelta)
       if lineDelta < 256
          then [(offsetDelta, lineDelta)]
          else (offsetDelta, 255) : chunkDeltas (0, lineDelta - 255)
-   | lineDelta < 256 =
-      (255, lineDelta) : chunkDeltas (offsetDelta - 255, 0)
-   | otherwise = (255, 255) : chunkDeltas (offsetDelta - 255, lineDelta - 255)
+   -- we must wait until offsetDelta is less than 256 before reducing lineDelta
+   | otherwise = (255, 0) : chunkDeltas (offsetDelta - 255, lineDelta)
