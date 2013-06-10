@@ -17,7 +17,8 @@ module Utils
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
    , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet
    , mkDict , mkSubscript, mkYield, identsFromParameters
-   , spanToScopeIdentifier, fromIdentString, countPosParameters, maybeToList )
+   , spanToScopeIdentifier, fromIdentString, countPosParameters
+   , maybeToList, getSpanLine )
    where 
 
 import Blip.Bytecode (Opcode (..), Bytecode (..))
@@ -26,6 +27,12 @@ import Language.Python.Common.AST as AST
    , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Types (Identifier, ScopeIdentifier, ParameterTypes (..))
+
+getSpanLine :: SrcSpan -> Maybe Int
+getSpanLine (SpanCoLinear {..}) = Just span_row
+getSpanLine (SpanMultiLine {..}) = Just span_start_row
+getSpanLine (SpanPoint {..}) = Just span_row
+getSpanLine SpanEmpty = Nothing
 
 maybeToList :: Maybe a -> [a]
 maybeToList Nothing = []

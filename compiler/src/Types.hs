@@ -131,6 +131,7 @@ data BlockState = BlockState
    , state_context :: !Context
    , state_lineNumber :: !Int
    , state_lineNumberTable :: ![(Word16, Int)] -- mapping from bytecode offset to source line number
+   , state_firstLineNumber :: !Word32
    }
    deriving (Show)
 

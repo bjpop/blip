@@ -24,7 +24,8 @@ module State
    , getLocalScope, indexedVarSetKeys, lookupNameVar
    , emitReadVar, emitWriteVar, emitDeleteVar, lookupClosureVar, setFlag
    , pushFrameBlock, popFrameBlock, peekFrameBlock, withFrameBlock 
-   , setFastLocals, setArgCount, emptyParameterTypes, setLineNumber )
+   , setFastLocals, setArgCount, emptyParameterTypes, setLineNumber
+   , setFirstLineNumber )
    where
 
 import Monad (Compile (..))
@@ -43,7 +44,7 @@ import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
 import Data.List (sort)
 import Data.Bits ((.|.))
-import Utils (identsFromParameters, countPosParameters)
+import Utils (identsFromParameters, countPosParameters, getSpanLine)
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 
 emptyVarSet :: VarSet
@@ -103,6 +104,7 @@ initBlockState context (LocalScope {..}) = BlockState
    , state_context = context
    , state_lineNumber = 0
    , state_lineNumberTable = []
+   , state_firstLineNumber = 0
    }
 
 varArgsFlags :: ParameterTypes -> Word32 -> Word32
@@ -342,7 +344,15 @@ updateLineNumberTable :: Word16 -> Compile ()
 updateLineNumberTable offset = do
    lineNumber <- getBlockState state_lineNumber
    oldTable <- getBlockState state_lineNumberTable
-   modifyBlockState $ \s -> s { state_lineNumberTable = (offset, lineNumber) : oldTable }
+   let updateTable =
+          modifyBlockState $ \s -> s { state_lineNumberTable = (offset, lineNumber) : oldTable }
+   case oldTable of
+      [] -> updateTable 
+      (_prevOffset, prevLineNumber):_rest
+         -- don't update the table if the current line number is not less
+         -- than the previously stored line number
+         | prevLineNumber >= lineNumber -> return ()
+         | otherwise -> updateTable
 
 compileConstant :: PyObject -> Compile ConstantID
 -- Code objects are not cached to avoid complex equality comparisons
@@ -513,19 +523,20 @@ withFrameBlock pushedInfo comp = do
      and why not the "else" and "finally"?
 -}
 
--- We ensure that line numbers are monotonically increasing.
 setLineNumber :: SrcSpan -> Compile ()
 setLineNumber span =
    case getSpanLine span of
       Nothing -> return ()
       Just line -> do
          oldLineNumber <- getBlockState state_lineNumber
+         -- We ensure that line numbers are monotonically increasing.
          if line > oldLineNumber
             then modifyBlockState $ \s -> s { state_lineNumber = line }
             else return ()
-   where
-   getSpanLine :: SrcSpan -> Maybe Int
-   getSpanLine (SpanCoLinear {..}) = Just span_row
-   getSpanLine (SpanMultiLine {..}) = Just span_start_row
-   getSpanLine (SpanPoint {..}) = Just span_row
-   getSpanLine SpanEmpty = Nothing
+
+setFirstLineNumber :: SrcSpan -> Compile ()
+setFirstLineNumber span = 
+   case getSpanLine span of
+      Nothing -> return ()
+      Just line ->
+         modifyBlockState $ \state -> state { state_firstLineNumber = fromIntegral line }

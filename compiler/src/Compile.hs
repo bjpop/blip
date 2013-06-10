@@ -61,7 +61,7 @@ import State
    , indexedVarSetKeys, emitReadVar, emitWriteVar, emitDeleteVar
    , lookupNameVar, lookupClosureVar, setFlag
    , peekFrameBlock, withFrameBlock, setFastLocals, setArgCount
-   , setLineNumber )
+   , setLineNumber, setFirstLineNumber )
 import Assemble (assemble)
 import Monad (Compile (..), runCompileMonad)
 import Types
@@ -205,6 +205,7 @@ makeObject = do
    flags <- getBlockState state_flags
    fastLocals <- getBlockState state_fastLocals
    lineNumberTable <- compileLineNumberTable 
+   firstLineNumber <- getBlockState state_firstLineNumber
    let code = map annotatedCode_bytecode annotatedCode 
        localVarNames = map Unicode $ indexedVarSetKeys fastLocals
        maxStackDepth = maxBound 
@@ -229,8 +230,7 @@ makeObject = do
                    , cellvars = makeVarSetTuple cellVars
                    , filename = Unicode pyFileName
                    , name = Unicode objectName
-                   , firstlineno = 0
-                   -- , lnotab = String B.empty
+                   , firstlineno = firstLineNumber
                    , lnotab = lineNumberTable
                    }
          return obj
@@ -730,6 +730,8 @@ nestedBlock context span comp = do
    setBlockState $ initBlockState context localScope
    -- set the new object name
    setObjectName name
+   -- set the first line number of the block
+   setFirstLineNumber span
    -- run the nested computation
    result <- comp
    -- restore the original block state
@@ -1303,9 +1305,7 @@ returnNone = compileConstantEmit Blip.None >> emitCodeNoArg RETURN_VALUE
 maybeDumpScope :: Compile ()
 maybeDumpScope = 
    ifDump DumpScope $ do
-      -- globals <- getGlobals
       nestedScope <- getNestedScope
-      -- liftIO $ putStrLn "Variable Scope:"
       liftIO $ putStrLn $ renderScope nestedScope
 
 -- Print out the AST of the module if requested on the command line.
@@ -1319,7 +1319,7 @@ maybeDumpAST ast = do
    From Cpython: Objects/lnotab_notes.txt
 
 Code objects store a field named co_lnotab.  This is an array of unsigned bytes
-disguised as a Python string.  It is used to map bytecode offsets to source code
+disguised as a Python string. It is used to map bytecode offsets to source code
 line #s for tracebacks and to identify line number boundaries for line tracing.
 
 The array is conceptually a compressed list of
@@ -1369,7 +1369,7 @@ but to
     255, 0, 45, 255, 0, 45.
 -}
 
--- should produce a bytestring
+-- Returns the bytestring representation of the compressed line number table
 compileLineNumberTable :: Compile PyObject
 compileLineNumberTable = do
    offsetToLine <- reverse `fmap` getBlockState state_lineNumberTable
