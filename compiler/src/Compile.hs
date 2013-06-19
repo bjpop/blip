@@ -93,6 +93,7 @@ import System.FilePath ((<.>), takeBaseName)
 -- import System.Time (ClockTime (..))
 import System.IO (openFile, IOMode(..), hClose, hFileSize, hGetContents)
 import Data.Word (Word32, Word16)
+import Data.Int (Int32)
 import Data.Traversable as Traversable (mapM)
 import qualified Data.ByteString.Lazy as B (pack)
 import Data.ByteString.Lazy.UTF8 (fromString)
@@ -983,7 +984,16 @@ compileComprehension name initStmt updater returnStmt comprehension = do
 -- only works for expressions which have a counterpart in the object
 -- representation used in .pyc files.
 constantToPyObject :: ExprSpan -> PyObject
-constantToPyObject (AST.Int {..}) = Blip.Int $ fromIntegral int_value
+constantToPyObject (AST.Int {..})
+   | int_value > (fromIntegral max32BitSignedInt) ||
+     int_value < (fromIntegral min32BitSignedInt)
+      =  Blip.Long int_value
+   | otherwise = Blip.Int $ fromIntegral int_value
+   where
+   max32BitSignedInt :: Int32
+   max32BitSignedInt = maxBound 
+   min32BitSignedInt :: Int32
+   min32BitSignedInt = minBound 
 constantToPyObject (AST.Float {..}) = Blip.Float $ float_value 
 -- XXX we could optimise the case where we have 'float + imaginary j',
 -- to generate a Complex number directly, rather than by doing

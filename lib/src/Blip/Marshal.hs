@@ -23,16 +23,16 @@ import Blip.Bytecode (decode, BytecodeSeq (..))
 import Blip.Pretty (Pretty (..), prettyList, prettyTuple)
 import Control.Applicative ((<$>), (<*>))
 import Data.Map as Map hiding (map, size, empty)
-import Data.Word (Word8, Word32)
+import Data.Word (Word8, Word16, Word32)
 import Control.Monad.Error (ErrorT (..), lift, replicateM)
 import System.IO (Handle)
 import qualified Data.ByteString.Lazy as B 
    (ByteString, hGetContents, unpack, hPutStr, length)
 import Data.ByteString.Lazy.UTF8 as UTF8 (toString, fromString) 
-import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8)
-import Data.Binary.Put (PutM, putWord32le, putLazyByteString, runPutM, putWord8)
+import Data.Binary.Get (Get, runGet, getLazyByteString, getWord32le, getWord8, getWord16le)
+import Data.Binary.Put (PutM, putWord32le, putLazyByteString, runPutM, putWord8, putWord16le)
 import Data.Bits ((.&.))
-import Data.Int (Int64)
+import Data.Int (Int64, Int32)
 import Data.Char (chr, ord)
 import Text.PrettyPrint
    (text, (<+>), ($$), (<>), Doc , vcat, int, equals, doubleQuotes, hsep, empty)
@@ -55,38 +55,40 @@ instance Pretty PycFile where
 
 data PyObject
    = Code
-        { argcount :: Word32 -- #arguments, except *args
-        , kwonlyargcount :: Word32 -- #keyword only arguments 
-        , nlocals :: Word32 -- #local variables
-        , stacksize :: Word32 -- #entries needed for evaluation stack
-        , flags :: Word32 -- CO_..., see below
-        , code :: PyObject -- instruction opcodes (a string)
-        , consts :: PyObject -- list (constants used) XXX seems to be a tuple
-        , names :: PyObject -- list of strings (names used)
-        , varnames :: PyObject -- tuple of strings (local variable names)
-        , freevars :: PyObject -- tuple of strings (free variable names)
-        , cellvars :: PyObject -- tuple of strings (cell variable names)
-        , filename :: PyObject -- unicode (where it was loaded from)
-        , name :: PyObject -- unicode (name, for reference)
-        , firstlineno :: Word32 -- first source line number
-        , lnotab :: PyObject -- string (encoding addr<->lineno mapping)
+        { argcount :: !Word32 -- #arguments, except *args
+        , kwonlyargcount :: !Word32 -- #keyword only arguments 
+        , nlocals :: !Word32 -- #local variables
+        , stacksize :: !Word32 -- #entries needed for evaluation stack
+        , flags :: !Word32 -- CO_..., see below
+        , code :: !PyObject -- instruction opcodes (a string)
+        , consts :: !PyObject -- list (constants used) XXX seems to be a tuple
+        , names :: !PyObject -- list of strings (names used)
+        , varnames :: !PyObject -- tuple of strings (local variable names)
+        , freevars :: !PyObject -- tuple of strings (free variable names)
+        , cellvars :: !PyObject -- tuple of strings (cell variable names)
+        , filename :: !PyObject -- unicode (where it was loaded from)
+        , name :: !PyObject -- unicode (name, for reference)
+        , firstlineno :: !Word32 -- first source line number
+        , lnotab :: !PyObject -- string (encoding addr<->lineno mapping)
         }
-   | String { string :: B.ByteString }
-   | Tuple { elements :: [PyObject] }
-   | Int { int_value :: Word32 }
-   | Float { float_value :: Double }
+   | String { string :: !B.ByteString }
+   | Tuple { elements :: ![PyObject] }
+   | Int { int_value :: !Word32 }  -- XXX should that be Int32?
+   | Float { float_value :: !Double }
    | None
    | Ellipsis
-   | Unicode { unicode :: String } -- should be decoded into a String
+   | Unicode { unicode :: !String } -- should be decoded into a String
    | TrueObj
    | FalseObj
-   | Complex { real :: Double, imaginary :: Double }
+   | Complex { real :: !Double, imaginary :: !Double }
+   | Long { long_value :: !Integer }
    deriving (Eq, Ord, Show)
 
 instance Pretty PyObject where
    pretty (String {..}) = doubleQuotes $ pretty string
    pretty (Tuple {..}) = prettyTuple $ map pretty elements
    pretty (Int {..}) = pretty int_value
+   pretty (Long {..}) = pretty long_value
    pretty (Float {..}) = pretty float_value
    pretty None = text "None"
    pretty Ellipsis = text "..."
@@ -167,6 +169,7 @@ readObject = do
        UNICODE -> readUnicodeObject
        BINARY_FLOAT -> readFloatObject
        BINARY_COMPLEX -> readComplexObject
+       LONG -> readLongObject
        _other -> error ("readObject: unsupported object type: " ++ show object_type)
 
 writeObject :: PyObject -> PutData
@@ -183,6 +186,7 @@ writeObject object =
       FalseObj -> putU8 $ encodeObjectType FALSE
       Float {..} -> writeFloatObject object
       Complex {..} -> writeComplexObject object
+      Long {..} -> writeLongObject object
 
 writeObjectType :: ObjectType -> PutData
 writeObjectType = putU8 . encodeObjectType
@@ -265,6 +269,53 @@ writeUnicodeObject (Unicode {..}) = do
    putU32 (fromIntegral $ B.length uc)
    putBS uc
 writeUnicodeObject other = error $ "writeUnicodeObject called on non unicode object: " ++ show other
+
+longDigitBase :: Integer
+longDigitBase = 2^(15::Integer)
+
+readLongObject :: GetData PyObject
+readLongObject = do
+   -- Read the len as a signed 32bit integer.
+   -- The sign tells us whether the number is positive or negative.
+   -- The magnitude tells us how many digits are in the number.
+   -- Digits are stored in base 2^15, in 16 bit chunks.
+   len <- getI32 
+   if len == 0
+      then return $ Long 0
+      else do
+         -- read 'len' digits
+         base15digits <- replicateM (fromIntegral (abs len)) getU16
+         -- pair each digit with its exponent
+         -- [(d0, 0), (d1, 1), ... (dn, n)]
+         let digitsExponents = zip (map fromIntegral base15digits) [(0::Integer) ..]
+         -- (d0 * base^0) + (d1 * base^1) + ... + ... (dn * base^n)
+             val = sum [(longDigitBase ^ exp) * digit | (digit, exp) <- digitsExponents]
+         -- Check if the result is positive or negative based on the sign of len.
+         if len < 0
+            then return $! Long $! negate val
+            else return $! Long val
+
+writeLongObject :: PyObject -> PutData
+writeLongObject (Long {..}) = do
+   writeObjectType LONG 
+   case compare long_value 0 of
+      EQ -> putI32 0
+      GT -> do 
+         putI32 numDigits 
+         mapM_ putU16 digits
+      LT -> do
+         putI32 $ negate numDigits 
+         mapM_ putU16 digits
+   where
+   digits :: [Word16]
+   digits = getDigits (abs long_value) longDigitBase
+   numDigits :: Int32 
+   numDigits = fromIntegral $ length digits
+   -- We assume n > 0
+   getDigits :: Integer -> Integer -> [Word16]
+   getDigits 0 _base = []
+   getDigits n base = (fromIntegral (n `mod` base)) : getDigits (n `div` base) base
+writeLongObject other = error $ "writeLongObject called on non long object: " ++ show other
 
 data ObjectType
    = NULL               -- '0'
@@ -360,6 +411,12 @@ getU8 = lift getWord8
 getU32 :: GetData Word32
 getU32 = lift getWord32le
 
+getI32 :: GetData Int32
+getI32 = fromIntegral `fmap` lift getWord32le
+
+getU16 :: GetData Word16
+getU16 = lift getWord16le
+
 runGetData :: GetData a -> B.ByteString -> Either String a
 runGetData = runGet . runErrorT
 
@@ -383,10 +440,17 @@ putBS = lift . putLazyByteString
 putU8 :: Word8 -> PutData
 putU8 = lift . putWord8
 
+-- write an unsigned 16 bit word
+putU16 :: Word16 -> PutData
+putU16 = lift . putWord16le
+
 -- XXX is it always little endian?
 -- write an unsigned 32 bit word
 putU32 :: Word32 -> PutData
 putU32 = lift . putWord32le
+
+putI32 :: Int32 -> PutData
+putI32 = putU32 . fromIntegral
 
 runPutData :: PutData -> Either String B.ByteString
 runPutData comp = 
