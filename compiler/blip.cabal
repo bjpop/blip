@@ -1,5 +1,5 @@
 Name:                blip 
-Version:             0.2.0
+Version:             0.2.1
 Synopsis:            Python to bytecode compiler.
 Homepage:            https://github.com/bjpop/blip  
 License:             BSD3
@@ -35,4 +35,15 @@ Executable blip {
      old-time==1.1.*,
      pretty==1.1.*
      -- utf8-string==0.3.*
+  other-modules:
+     Assemble
+     Desugar
+     Monad
+     Scope
+     State
+     Utils
+     Compile
+     ProgName
+     StackDepth
+     Types
 }

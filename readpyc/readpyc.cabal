@@ -1,5 +1,5 @@
 Name:                readpyc
-Version:             0.2.0
+Version:             0.2.1
 Synopsis:            Read and pretty print Python bytecode (.pyc) files.
 Homepage:            https://github.com/bjpop/blip 
 License:             BSD3
