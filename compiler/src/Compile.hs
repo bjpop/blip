@@ -96,7 +96,7 @@ import Data.Word (Word32, Word16)
 import Data.Int (Int32)
 import Data.Traversable as Traversable (mapM)
 import qualified Data.ByteString.Lazy as B (pack)
-import Data.ByteString.Lazy.UTF8 (fromString)
+import Data.String (fromString)
 import Data.List (intersperse)
 import Control.Monad (unless, forM_, when, replicateM_, foldM)
 import Control.Exception (try)
@@ -1010,7 +1010,8 @@ constantToPyObject (AST.Tuple {..}) =
 constantToPyObject (AST.Strings {..}) =
    Blip.Unicode { unicode = concat $ map normaliseString strings_strings }
 constantToPyObject (AST.ByteStrings {..}) =
-   Blip.String { string = fromString $ concat $ map normaliseString byte_string_strings }
+  -- error $ show $ map normaliseString byte_string_strings
+  Blip.String { string = fromString $ concat $ map normaliseString byte_string_strings }
 constantToPyObject other =
    error $ "constantToPyObject applied to an unexpected expression: " ++ prettyText other
 

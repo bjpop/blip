@@ -1,0 +1,6 @@
+blip hex_bytes_escaped_bytestring.py && python3.3 hex_bytes_escaped_bytestring.pyc
+<<<
+>>>
+b'\x80\x02\x88.'
+>>>2
+>>>=0

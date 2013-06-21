@@ -33,6 +33,6 @@ Executable blip {
      containers==0.5.*,
      bytestring==0.10.*,
      old-time==1.1.*,
-     pretty==1.1.*,
-     utf8-string==0.3.*
+     pretty==1.1.*
+     -- utf8-string==0.3.*
 }
