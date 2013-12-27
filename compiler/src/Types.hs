@@ -36,8 +36,8 @@ data Context
 -- the appropriate structure
 data VarInfo
    = LocalVar
-   | CellVar VarIndex 
-   | FreeVar VarIndex 
+   | CellVar !VarIndex 
+   | FreeVar !VarIndex 
    | ExplicitGlobal
    | ImplicitGlobal
 
@@ -75,7 +75,7 @@ data Dumpable = DumpScope | DumpAST
 
 data AnnotatedCode
    = AnnotatedCode 
-     { annotatedCode_bytecode :: Bytecode
+     { annotatedCode_bytecode :: !Bytecode
      , annotatedCode_labels :: ![Word16]   -- instruction can be labelled zero or more times
      , annotatedCode_index :: !Word16 }    -- byte offset of the instruction within this sequence of bytecode
    deriving Show
@@ -84,8 +84,8 @@ type Identifier = String -- a variable name
 
 data CompileConfig =
    CompileConfig
-   { compileConfig_magic :: Word32
-   , compileConfig_dumps :: Set Dumpable
+   { compileConfig_magic :: !Word32
+   , compileConfig_dumps :: !(Set Dumpable)
    }
    deriving (Eq, Show)
 
@@ -93,10 +93,10 @@ type ConstantID = Word16
 type ConstantCache = Map.Map PyObject ConstantID 
 
 data CompileState = CompileState
-   { state_config :: CompileConfig
-   , state_blockState :: BlockState
-   , state_filename :: FilePath
-   , state_nestedScope :: NestedScope
+   { state_config :: !CompileConfig
+   , state_blockState :: !BlockState
+   , state_filename :: !FilePath
+   , state_nestedScope :: !NestedScope
    }
 
 -- Map from Label to Instruction offset.
@@ -109,25 +109,25 @@ type IndexedVarSet = Map.Map Identifier VarIndex
 
 data BlockState = BlockState 
    { state_label :: !Word16
-   , state_instructions :: [AnnotatedCode]
-   , state_labelNextInstruction :: [Word16] -- zero or more labels for the next instruction
-   , state_constants :: [PyObject] 
-   , state_constantCache :: ConstantCache
+   , state_instructions :: ![AnnotatedCode]
+   , state_labelNextInstruction :: ![Word16] -- zero or more labels for the next instruction
+   , state_constants :: ![PyObject] 
+   , state_constantCache :: !ConstantCache
    , state_nextConstantID :: !ConstantID
-   , state_names :: [Identifier]
-   , state_nameCache :: IndexedVarSet
+   , state_names :: ![Identifier]
+   , state_nameCache :: !IndexedVarSet
    , state_nextNameID :: !VarIndex
-   , state_objectName :: String
+   , state_objectName :: !String
    , state_instruction_index :: !Word16
-   , state_labelMap :: LabelMap
-   , state_locals :: VarSet
-   , state_fastLocals :: IndexedVarSet
-   , state_freeVars :: IndexedVarSet
-   , state_cellVars :: IndexedVarSet
-   , state_explicitGlobals :: VarSet
+   , state_labelMap :: !LabelMap
+   , state_locals :: !VarSet
+   , state_fastLocals :: !IndexedVarSet
+   , state_freeVars :: !IndexedVarSet
+   , state_cellVars :: !IndexedVarSet
+   , state_explicitGlobals :: !VarSet
    , state_argcount :: !Word32
    , state_flags :: !Word32
-   , state_frameBlockStack :: [FrameBlockInfo]
+   , state_frameBlockStack :: ![FrameBlockInfo]
    , state_context :: !Context
    , state_lineNumber :: !Word32
    , state_lineNumberTable :: ![(Word16, Word32)] -- mapping from bytecode offset to source line number

@@ -56,9 +56,9 @@ makeBytecodeMap = makeBytecodeMapAcc Map.empty
 
 data StackDepthState =
    StackDepthState
-   { stackDepth_bytecodeMap :: BytecodeMap
+   { stackDepth_bytecodeMap :: !BytecodeMap
    , stackDepth_maxDepth :: !StackDepth
-   , stackDepth_cache :: StackDepthCache 
+   , stackDepth_cache :: !StackDepthCache 
    }
 
 initStackDepthState :: BytecodeMap -> StackDepthState

@@ -255,7 +255,7 @@ opcodeList = [
 
 
 data BytecodeArg
-   = Arg16 Word16
+   = Arg16 !Word16
    -- Arg32 Word32 etcetera
    deriving Show
 
@@ -264,8 +264,8 @@ instance Pretty BytecodeArg where
 
 data Bytecode =
    Bytecode 
-   { opcode :: Opcode
-   , args :: Maybe BytecodeArg
+   { opcode :: !Opcode
+   , args :: !(Maybe BytecodeArg)
    }
    deriving Show
 
