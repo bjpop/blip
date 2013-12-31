@@ -20,6 +20,7 @@ module State
    , insertHeap
    , lookupHeap
    , getProgramCounter
+   , setProgramCounter
    , incProgramCounter
    , getGlobal
    , setGlobal
@@ -96,6 +97,10 @@ lookupHeap objectID = do
 -- does not increment the counter
 getProgramCounter :: Eval ProgramCounter 
 getProgramCounter = gets evalState_programCounter
+
+setProgramCounter :: ProgramCounter -> Eval () 
+setProgramCounter pc =
+   modify $ \state -> state { evalState_programCounter = pc } 
 
 incProgramCounter :: ProgramCounter -> Eval ()
 incProgramCounter n = 

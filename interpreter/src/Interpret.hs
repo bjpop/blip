@@ -17,7 +17,7 @@ module Interpret (interpretFile) where
 import Data.Fixed (mod')
 import Text.Printf (printf)
 import Data.List as List (length)
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, when)
 import Control.Monad.Trans (liftIO)
 import Control.Applicative ((<$>))
 import System.IO (withFile, IOMode (..))
@@ -37,7 +37,7 @@ import State
    ( runEvalMonad, getNextObjectID, insertHeap
    , lookupHeap, initState, getProgramCounter, incProgramCounter
    , pushStack, popStack, getStack, getGlobal, setGlobal
-   , allocateHeapObject, lookupName ) 
+   , allocateHeapObject, lookupName, setProgramCounter ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
 
@@ -112,62 +112,84 @@ evalOpCode codeObject opcode arg =
 -- Some opcodes don't use the arg, but we pass it anyway (a dummy arg) to simplify
 -- the program
 evalOneOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
-evalOneOpCode codeObject POP_TOP arg = popStack >> return ()
-evalOneOpCode codeObject ROT_TWO arg = do
-   first <- popStack
-   second <- popStack
-   pushStack first 
-   pushStack second 
--- (first:second:third:rest) -> (second:third:first:rest)
-evalOneOpCode codeObject ROT_THREE arg = do
-   first <- popStack
-   second <- popStack
-   third <- popStack
-   pushStack first 
-   pushStack third
-   pushStack second
-evalOneOpCode codeObject DUP_TOP arg = do
-   first <- popStack
-   pushStack first
-evalOneOpCode codeObject DUP_TOP_TWO arg = do
-   first <- popStack
-   second <- popStack
-   pushStack second
-   pushStack first
-evalOneOpCode codeObject NOP arg = return ()
-evalOneOpCode codeObject BINARY_POWER arg = binOpPower
-evalOneOpCode codeObject BINARY_MULTIPLY arg = binOpMultiply
-evalOneOpCode codeObject BINARY_MODULO arg = binOpModulo
-evalOneOpCode codeObject BINARY_ADD arg = binOpAdd
-evalOneOpCode codeObject BINARY_SUBTRACT arg = binOpSubtract
-evalOneOpCode codeObject BINARY_TRUE_DIVIDE arg = binOpDivide
--- XXX load name should really look in local scope, then enclosing, then global, then builtins
-evalOneOpCode codeObject@(CodeObject {..}) LOAD_NAME arg = do
-   nameString <- lookupName codeObject_names arg
-   globalID <- getGlobal nameString 
-   pushStack globalID
-evalOneOpCode codeObject@(CodeObject {..}) STORE_NAME arg = do
-   nameString <- lookupName codeObject_names arg
-   objectID <- popStack
-   setGlobal nameString objectID
-evalOneOpCode codeObject@(CodeObject {..}) LOAD_CONST arg = do
-   constsTupleObject <- lookupHeap codeObject_consts 
-   case constsTupleObject of
-      TupleObject {..} -> do
-         let tupleSize = Vector.length tupleObject_elements 
-             arg64 = fromIntegral arg
-         if arg64 < 0 || arg64 >= tupleSize 
-            then error $ "index into const tuple out of bounds"
-            else do
-               let constObjectID = tupleObject_elements ! arg64
-               pushStack constObjectID 
-      other -> error $ "names tuple not a tuple: " ++ show other
-evalOneOpCode codeObject CALL_FUNCTION arg = do
-   functionArgs <- replicateM (fromIntegral arg) popStack
-   functionObjectID <- popStack
-   functionObject <- lookupHeap functionObjectID
-   callFunction functionObject functionArgs 
-evalOneOpCode codeObject otherOpCode arg = return ()
+evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
+   case opcode of
+      POP_TOP -> popStack >> return () 
+      ROT_TWO -> do
+         first <- popStack
+         second <- popStack
+         pushStack first 
+         pushStack second 
+      -- (first:second:third:rest) -> (second:third:first:rest)
+      ROT_THREE -> do
+         first <- popStack
+         second <- popStack
+         third <- popStack
+         pushStack first 
+         pushStack third
+         pushStack second
+      DUP_TOP -> do
+         first <- popStack
+         pushStack first
+      DUP_TOP_TWO -> do
+         first <- popStack
+         second <- popStack
+         pushStack second
+         pushStack first
+      NOP -> return ()
+      BINARY_POWER -> binOpPower
+      BINARY_MULTIPLY -> binOpMultiply
+      BINARY_MODULO -> binOpModulo
+      BINARY_ADD -> binOpAdd
+      BINARY_SUBTRACT -> binOpSubtract
+      BINARY_TRUE_DIVIDE -> binOpDivide
+      -- XXX load name should really look in local scope, then enclosing, then global, then builtins
+      LOAD_NAME -> do 
+         nameString <- lookupName codeObject_names arg
+         globalID <- getGlobal nameString 
+         pushStack globalID
+      STORE_NAME -> do
+         nameString <- lookupName codeObject_names arg
+         objectID <- popStack
+         setGlobal nameString objectID
+      LOAD_CONST -> do
+         constsTupleObject <- lookupHeap codeObject_consts 
+         case constsTupleObject of
+            TupleObject {..} -> do
+               let tupleSize = Vector.length tupleObject_elements 
+                   arg64 = fromIntegral arg
+               if arg64 < 0 || arg64 >= tupleSize 
+                  then error $ "index into const tuple out of bounds"
+                  else do
+                     let constObjectID = tupleObject_elements ! arg64
+                     pushStack constObjectID 
+            other -> error $ "names tuple not a tuple: " ++ show other
+      CALL_FUNCTION -> do
+         functionArgs <- replicateM (fromIntegral arg) popStack
+         functionObjectID <- popStack
+         functionObject <- lookupHeap functionObjectID
+         callFunction functionObject functionArgs 
+      JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
+      -- setup loop should push a block onto the block stack
+      SETUP_LOOP -> return ()
+      -- pop block should pop a block off the block stack
+      POP_BLOCK -> return ()
+      POP_JUMP_IF_FALSE -> do
+         top <- popStack
+         when (top == 0) (setProgramCounter $ fromIntegral arg)
+      COMPARE_OP ->
+         case arg of
+            0 -> return () -- < 
+            1 -> return () -- <= 
+            2 -> return () -- ==
+            3 -> return () -- !=
+            4 -> evalBinaryOp greaterThan 
+            5 -> return () -- >=
+            6 -> return () -- in
+            7 -> return () -- not in
+            8 -> return () -- is
+            9 -> return () -- is not
+      _otherOpCode -> return ()
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
 callFunction (Primitive arity name fun) args
@@ -175,12 +197,16 @@ callFunction (Primitive arity name fun) args
    | otherwise = error (printf "primitve of arity %d applied to %d arguments"
                                arity (List.length args))
 
+greaterThan :: HeapObject -> HeapObject -> Eval () 
+greaterThan (IntObject x) (IntObject y) =
+   if y > x then pushStack 1 else pushStack 0
+
 evalBinaryOp :: (HeapObject -> HeapObject -> Eval ()) -> Eval () 
 evalBinaryOp f = do
-   stackArg1 <- popStack
-   stackArg2 <- popStack
-   object1 <- lookupHeap stackArg1
-   object2 <- lookupHeap stackArg2
+   first <- popStack
+   second <- popStack
+   object1 <- lookupHeap first 
+   object2 <- lookupHeap second 
    f object1 object2 
 
 data BinOp =
@@ -209,20 +235,16 @@ binOpDivide :: Eval ()
 binOpDivide = evalBinaryOp (binOp $ BinOp BINARY_TRUE_DIVIDE (flip div) (flip (/)))
 
 binOp :: BinOp -> HeapObject -> HeapObject ->  Eval ()
-binOp ops (IntObject x) (IntObject y) = do
-   let resultObject = IntObject $ (binOpIntInt ops) x y
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-binOp ops (FloatObject x) (FloatObject y) = do
-   let resultObject = FloatObject $ (binOpFloatFloat ops) x y
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-binOp ops (IntObject x) (FloatObject y) = do
-   let resultObject = FloatObject $ (binOpFloatFloat ops) (fromIntegral x) y
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-binOp ops (FloatObject x) (IntObject y) = do
-   let resultObject = FloatObject $ (binOpFloatFloat ops) x (fromIntegral y)
+binOp ops object1 object2 = do
+   let resultObject = case (object1, object2) of
+          (IntObject x, IntObject y) ->
+             IntObject $ (binOpIntInt ops) x y
+          (FloatObject x, FloatObject y) -> 
+             FloatObject $ (binOpFloatFloat ops) x y
+          (IntObject x, FloatObject y) -> 
+             FloatObject $ (binOpFloatFloat ops) (fromIntegral x) y
+          (FloatObject x, IntObject y) -> 
+             FloatObject $ (binOpFloatFloat ops) x (fromIntegral y)
    objectID <- allocateHeapObject resultObject
    pushStack objectID
 -- XXX FIXME
