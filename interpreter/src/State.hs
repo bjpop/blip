@@ -21,10 +21,6 @@ module State
    , lookupHeap
    , getProgramCounter
    , incProgramCounter
-   , getNames
-   , setNames
-   , getConsts
-   , setConsts
    , getGlobal
    , setGlobal
    , getStack
@@ -47,8 +43,6 @@ initState =
    { evalState_objectID = 0
    , evalState_heap = Map.empty
    , evalState_programCounter = 0
-   , evalState_names = -1  -- will be fixed up when the program is run
-   , evalState_consts = -1 -- will be fixed up when the program is run
    , evalState_stack = []
    , evalState_globals = Map.empty
    }
@@ -106,20 +100,6 @@ incProgramCounter n =
       let oldPC = evalState_programCounter state
           newPC = oldPC + n
       in state { evalState_programCounter = newPC }
-
-getNames :: Eval ObjectID
-getNames = gets evalState_names
-
-setNames :: ObjectID -> Eval ()
-setNames objectID =
-   modify $ \state -> state { evalState_names = objectID }
-
-getConsts :: Eval ObjectID
-getConsts = gets evalState_consts
-
-setConsts :: ObjectID -> Eval ()
-setConsts objectID =
-   modify $ \state -> state { evalState_consts = objectID }
 
 getGlobal :: String -> Eval ObjectID
 getGlobal name = do

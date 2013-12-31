@@ -33,8 +33,8 @@ import Types
    ( Eval (..), EvalState (..), StackObject ) 
 import State 
    ( runEvalMonad, getNextObjectID, insertHeap
-   , lookupHeap, initState, getProgramCounter, incProgramCounter, getNames
-   , setNames, getConsts, setConsts, pushStack, popStack, getStack, getGlobal
+   , lookupHeap, initState, getProgramCounter, incProgramCounter
+   , pushStack, popStack, getStack, getGlobal
    , allocateHeapObject ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
@@ -83,8 +83,6 @@ evalCodeObject object@(CodeObject {..}) = do
    if pc < 0 || pc >= numInstructions
       then return ()
       else do
-         setNames codeObject_names
-         setConsts codeObject_consts
          let nextOpCodeWord8 = B.index code pc
          case Map.lookup nextOpCodeWord8 word8ToOpcode of
             Nothing -> error ("bad op code: " ++ show nextOpCodeWord8)
@@ -108,9 +106,8 @@ evalCodeObject other = error ("try to eval non code object: " ++ show other)
 -- Some opcodes don't use the arg, but we pass it anyway (a dummy arg) to simplify
 -- the program
 evalOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
-evalOpCode codeObject LOAD_NAME arg = do
-   namesTupleID <- getNames 
-   namesTupleObject <- lookupHeap namesTupleID
+evalOpCode codeObject@(CodeObject {..}) LOAD_NAME arg = do
+   namesTupleObject <- lookupHeap codeObject_names 
    case namesTupleObject of
       TupleObject {..} -> do
          let tupleSize = Vector.length tupleObject_elements 
@@ -127,9 +124,8 @@ evalOpCode codeObject LOAD_NAME arg = do
                   other -> error $ "name does not point to a unicode object: " ++ show other
                evalCodeObject codeObject
       other -> error $ "names tuple not a tuple: " ++ show other
-evalOpCode codeObject LOAD_CONST arg = do
-   constsTupleID <- getConsts
-   constsTupleObject <- lookupHeap constsTupleID
+evalOpCode codeObject@(CodeObject {..}) LOAD_CONST arg = do
+   constsTupleObject <- lookupHeap codeObject_consts 
    case constsTupleObject of
       TupleObject {..} -> do
          let tupleSize = Vector.length tupleObject_elements 

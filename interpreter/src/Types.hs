@@ -41,8 +41,6 @@ data EvalState =
    { evalState_objectID :: !ObjectID
    , evalState_heap :: !Heap
    , evalState_programCounter :: !ProgramCounter
-   , evalState_names :: !ObjectID
-   , evalState_consts :: !ObjectID
    , evalState_stack :: !Stack
    , evalState_globals :: !Globals
    }
