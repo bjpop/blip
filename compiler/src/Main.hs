@@ -15,12 +15,13 @@
 module Main where
 
 import System.Exit (exitFailure, exitSuccess)
+import Control.Exception (try)
 import Control.Monad (when)
 import System.Console.ParseArgs
    (Argtype (..), argDataOptional, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
 import Blip.Version (versionString)
-import Compile (compileFile)
+import Compile (compileFile, writePycFile)
 import ProgName (progName)
 import Data.Set as Set (Set, empty, singleton, union)
 import Types (Dumpable (..), CompileConfig (..))
@@ -45,7 +46,22 @@ main = do
        config = initCompileConfig 
                    { compileConfig_magic = fromIntegral magicNumber
                    , compileConfig_dumps = dumps }
-   mapM_ (compileFile config) pythonFiles
+   mapM_ (compileAndWritePyc config) pythonFiles
+
+compileAndWritePyc :: CompileConfig -> FilePath -> IO ()
+compileAndWritePyc config path =
+   handleIOErrors $ do
+      pyc <- compileFile config path 
+      writePycFile pyc path
+
+handleIOErrors :: IO () -> IO ()
+handleIOErrors comp = do
+   r <- try comp
+   case r of
+      -- XXX maybe we want more customised error messages for different kinds of
+      -- IOErrors?
+      Left e -> putStrLn $ progName ++ ": " ++ show (e :: IOError)
+      Right () -> return ()
 
 data ArgIndex
    = Help

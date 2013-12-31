@@ -42,7 +42,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Compile (compileFile) where
+module Compile (compileFile, writePycFile) where
 
 import Prelude hiding (mapM)
 import Desugar (desugarComprehension, desugarWith, resultName)
@@ -51,7 +51,6 @@ import Utils
    , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
    , mkSubscript, mkReturn, mkYield, spanToScopeIdentifier )
 import StackDepth (maxStackDepth)
-import ProgName (progName)
 import State
    ( setBlockState, getBlockState, initBlockState, initState
    , emitCodeNoArg, emitCodeArg, compileConstantEmit
@@ -99,7 +98,6 @@ import qualified Data.ByteString.Lazy as B (pack)
 import Data.String (fromString)
 import Data.List (intersperse)
 import Control.Monad (unless, forM_, when, replicateM_, foldM)
-import Control.Exception (try)
 import Control.Monad.Trans (liftIO)
 import Data.Bits ((.|.), shiftL)
 
@@ -110,32 +108,30 @@ import Data.Bits ((.|.), shiftL)
 
 compileFile :: CompileConfig -- Configuration options
             -> FilePath      -- The file path of the input Python source
-            -> IO ()
+            -> IO PycFile
 compileFile config path = do
-   r <- try $ do
-      pyHandle <- openFile path ReadMode
-      sizeInBytes <- hFileSize pyHandle
-      fileContents <- hGetContents pyHandle
-      -- modifiedTime <- getModificationTime path
-      -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
-      let modSeconds = (0 :: Integer)
-      pyModule <- parseAndCheckErrors fileContents path
-      (moduleLocals, nestedScope) <- topScope pyModule
-      -- canonicalPath <- canonicalizePath path 
-      canonicalPath <- return path 
-      let state = initState ModuleContext moduleLocals 
-                     nestedScope config canonicalPath
-      pyc <- compileModule state (fromIntegral modSeconds)
-                (fromIntegral sizeInBytes) pyModule
-      let pycFilePath = takeBaseName path <.> ".pyc"
-      pycHandle <- openFile pycFilePath WriteMode 
-      writePyc pycHandle pyc
-      hClose pycHandle
-   -- XXX maybe we want more customised error messages for different kinds of
-   -- IOErrors?
-   case r of
-      Left e -> putStrLn $ progName ++ ": " ++ show (e :: IOError)
-      Right () -> return ()
+   pyHandle <- openFile path ReadMode
+   sizeInBytes <- hFileSize pyHandle
+   fileContents <- hGetContents pyHandle
+   -- modifiedTime <- getModificationTime path
+   -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
+   let modSeconds = (0 :: Integer)
+   pyModule <- parseAndCheckErrors fileContents path
+   (moduleLocals, nestedScope) <- topScope pyModule
+   -- canonicalPath <- canonicalizePath path 
+   canonicalPath <- return path 
+   let state = initState ModuleContext moduleLocals 
+                  nestedScope config canonicalPath
+   pyc <- compileModule state (fromIntegral modSeconds)
+             (fromIntegral sizeInBytes) pyModule
+   return pyc
+
+writePycFile :: PycFile -> FilePath -> IO ()
+writePycFile pyc path = do
+   let pycFilePath = takeBaseName path <.> ".pyc"
+   pycHandle <- openFile pycFilePath WriteMode 
+   writePyc pycHandle pyc
+   hClose pycHandle
 
 -- Parse the Python source into an AST, check for any syntax errors.
 parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan

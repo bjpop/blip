@@ -12,7 +12,8 @@
 -----------------------------------------------------------------------------
 module Blip.Bytecode
    ( decode, encode, Opcode (..), Bytecode (..),
-     BytecodeArg (..), BytecodeSeq (..), bytecodeSize ) where
+     BytecodeArg (..), BytecodeSeq (..), bytecodeSize
+   , word8ToOpcode, hasArg, word8sToWord16 ) where
 
 import Data.Word (Word8, Word16)
 import Data.ByteString.Lazy as B 
