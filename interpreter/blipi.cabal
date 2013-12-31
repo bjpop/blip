@@ -1,0 +1,39 @@
+Name:                blipi
+Version:             0.2.1
+Synopsis:            Python bytecode interpreter.
+Homepage:            https://github.com/bjpop/blip  
+License:             BSD3
+License-file:        LICENSE
+Author:              Bernie Pope
+Maintainer:          Bernie Pope <florbitous@gmail.com>
+Stability:           Experimental
+category:            Language 
+Build-type:          Simple
+Cabal-version:       >=1.8
+Description:
+  Simple reference implementation of a bytecode interpreter for Python 3.
+
+source-repository head
+  type: git
+  location: git://github.com/bjpop/blip.git
+
+Executable blipi {
+  ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
+  main-is: Main.hs
+  hs-source-dirs: src
+  build-depends: base==4.*,
+     bliplib == 0.2.*,
+     filepath == 1.3.*,
+     parseargs == 0.1.* ,
+     language-python==0.4.*,
+     mtl==2.1.*,
+     containers==0.5.*,
+     bytestring==0.10.*,
+     vector==0.10.*
+  other-modules:
+     ProgName
+     Interpret
+     Types
+     State
+     Prims
+}
