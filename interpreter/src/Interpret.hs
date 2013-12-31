@@ -14,6 +14,7 @@
 
 module Interpret (interpretFile) where
 
+import Data.Fixed (mod')
 import Text.Printf (printf)
 import Data.List as List (length)
 import Control.Monad (replicateM)
@@ -28,14 +29,15 @@ import qualified Data.Map as Map (insert, lookup)
 import Data.Map (Map)
 import qualified Data.ByteString.Lazy as B (ByteString, index, length)
 import Data.Word (Word8, Word16, Word32)
+import Data.Int (Int32)
 import Data.Vector as Vector (Vector, fromList, length, (!))
 import Types 
    ( Eval (..), EvalState (..), StackObject ) 
 import State 
    ( runEvalMonad, getNextObjectID, insertHeap
    , lookupHeap, initState, getProgramCounter, incProgramCounter
-   , pushStack, popStack, getStack, getGlobal
-   , allocateHeapObject ) 
+   , pushStack, popStack, getStack, getGlobal, setGlobal
+   , allocateHeapObject, lookupName ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
 
@@ -103,28 +105,52 @@ evalCodeObject object@(CodeObject {..}) = do
                -- evalCodeObject object
 evalCodeObject other = error ("try to eval non code object: " ++ show other)
 
+evalOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
+evalOpCode codeObject opcode arg =
+   evalOneOpCode codeObject opcode arg >> evalCodeObject codeObject
+
 -- Some opcodes don't use the arg, but we pass it anyway (a dummy arg) to simplify
 -- the program
-evalOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
-evalOpCode codeObject@(CodeObject {..}) LOAD_NAME arg = do
-   namesTupleObject <- lookupHeap codeObject_names 
-   case namesTupleObject of
-      TupleObject {..} -> do
-         let tupleSize = Vector.length tupleObject_elements 
-             arg64 = fromIntegral arg
-         if arg64 < 0 || arg64 >= tupleSize 
-            then error $ "index into name tuple out of bounds"
-            else do
-               let unicodeObjectID = tupleObject_elements ! arg64
-               unicodeObject <- lookupHeap unicodeObjectID 
-               case unicodeObject of
-                  UnicodeObject {..} -> do -- liftIO $ printf "name: %s\n" unicodeObject_value 
-                     globalID <- getGlobal unicodeObject_value
-                     pushStack globalID
-                  other -> error $ "name does not point to a unicode object: " ++ show other
-               evalCodeObject codeObject
-      other -> error $ "names tuple not a tuple: " ++ show other
-evalOpCode codeObject@(CodeObject {..}) LOAD_CONST arg = do
+evalOneOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
+evalOneOpCode codeObject POP_TOP arg = popStack >> return ()
+evalOneOpCode codeObject ROT_TWO arg = do
+   first <- popStack
+   second <- popStack
+   pushStack first 
+   pushStack second 
+-- (first:second:third:rest) -> (second:third:first:rest)
+evalOneOpCode codeObject ROT_THREE arg = do
+   first <- popStack
+   second <- popStack
+   third <- popStack
+   pushStack first 
+   pushStack third
+   pushStack second
+evalOneOpCode codeObject DUP_TOP arg = do
+   first <- popStack
+   pushStack first
+evalOneOpCode codeObject DUP_TOP_TWO arg = do
+   first <- popStack
+   second <- popStack
+   pushStack second
+   pushStack first
+evalOneOpCode codeObject NOP arg = return ()
+evalOneOpCode codeObject BINARY_POWER arg = binOpPower
+evalOneOpCode codeObject BINARY_MULTIPLY arg = binOpMultiply
+evalOneOpCode codeObject BINARY_MODULO arg = binOpModulo
+evalOneOpCode codeObject BINARY_ADD arg = binOpAdd
+evalOneOpCode codeObject BINARY_SUBTRACT arg = binOpSubtract
+evalOneOpCode codeObject BINARY_TRUE_DIVIDE arg = binOpDivide
+-- XXX load name should really look in local scope, then enclosing, then global, then builtins
+evalOneOpCode codeObject@(CodeObject {..}) LOAD_NAME arg = do
+   nameString <- lookupName codeObject_names arg
+   globalID <- getGlobal nameString 
+   pushStack globalID
+evalOneOpCode codeObject@(CodeObject {..}) STORE_NAME arg = do
+   nameString <- lookupName codeObject_names arg
+   objectID <- popStack
+   setGlobal nameString objectID
+evalOneOpCode codeObject@(CodeObject {..}) LOAD_CONST arg = do
    constsTupleObject <- lookupHeap codeObject_consts 
    case constsTupleObject of
       TupleObject {..} -> do
@@ -135,24 +161,13 @@ evalOpCode codeObject@(CodeObject {..}) LOAD_CONST arg = do
             else do
                let constObjectID = tupleObject_elements ! arg64
                pushStack constObjectID 
-               evalCodeObject codeObject
       other -> error $ "names tuple not a tuple: " ++ show other
-evalOpCode codeObject BINARY_MULTIPLY arg = do
-   stackArg1 <- popStack
-   stackArg2 <- popStack
-   stackObject1 <- lookupHeap stackArg1
-   staclObject2 <- lookupHeap stackArg2
-   multiply stackObject1 staclObject2
-   evalCodeObject codeObject
-evalOpCode codeObject CALL_FUNCTION arg = do
+evalOneOpCode codeObject CALL_FUNCTION arg = do
    functionArgs <- replicateM (fromIntegral arg) popStack
    functionObjectID <- popStack
    functionObject <- lookupHeap functionObjectID
    callFunction functionObject functionArgs 
-   evalCodeObject codeObject
-evalOpCode codeObject POP_TOP arg = popStack >> evalCodeObject codeObject 
-evalOpCode codeObject otherOpCode arg = do
-    evalCodeObject codeObject
+evalOneOpCode codeObject otherOpCode arg = return ()
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
 callFunction (Primitive arity name fun) args
@@ -160,17 +175,80 @@ callFunction (Primitive arity name fun) args
    | otherwise = error (printf "primitve of arity %d applied to %d arguments"
                                arity (List.length args))
 
-multiply :: HeapObject -> HeapObject -> Eval ()
-multiply (IntObject int1) (IntObject int2) = do
-   let resultObject = IntObject (int1 * int2)
+evalBinaryOp :: (HeapObject -> HeapObject -> Eval ()) -> Eval () 
+evalBinaryOp f = do
+   stackArg1 <- popStack
+   stackArg2 <- popStack
+   object1 <- lookupHeap stackArg1
+   object2 <- lookupHeap stackArg2
+   f object1 object2 
+
+data BinOp =
+   BinOp
+   { binOp_opcode :: Opcode
+   , binOpIntInt :: Int32 -> Int32 -> Int32
+   , binOpFloatFloat :: Double -> Double -> Double
+   }
+
+binOpMultiply :: Eval () 
+binOpMultiply = evalBinaryOp (binOp $ BinOp BINARY_MULTIPLY (*) (*))
+
+binOpPower :: Eval () 
+binOpPower = evalBinaryOp (binOp $ BinOp BINARY_POWER (flip (^)) (flip (**)))
+
+binOpAdd :: Eval () 
+binOpAdd = evalBinaryOp (binOp $ BinOp BINARY_ADD (+) (+))
+
+binOpModulo :: Eval () 
+binOpModulo = evalBinaryOp (binOp $ BinOp BINARY_MODULO (flip mod) (flip mod'))
+
+binOpSubtract :: Eval () 
+binOpSubtract = evalBinaryOp (binOp $ BinOp BINARY_SUBTRACT (flip (-)) (flip (-)))
+
+binOpDivide :: Eval () 
+binOpDivide = evalBinaryOp (binOp $ BinOp BINARY_TRUE_DIVIDE (flip div) (flip (/)))
+
+binOp :: BinOp -> HeapObject -> HeapObject ->  Eval ()
+binOp ops (IntObject x) (IntObject y) = do
+   let resultObject = IntObject $ (binOpIntInt ops) x y
    objectID <- allocateHeapObject resultObject
    pushStack objectID
-multiply (FloatObject float1) (FloatObject float2) = do
-   let resultObject = FloatObject (float1 * float2)
+binOp ops (FloatObject x) (FloatObject y) = do
+   let resultObject = FloatObject $ (binOpFloatFloat ops) x y
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+binOp ops (IntObject x) (FloatObject y) = do
+   let resultObject = FloatObject $ (binOpFloatFloat ops) (fromIntegral x) y
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+binOp ops (FloatObject x) (IntObject y) = do
+   let resultObject = FloatObject $ (binOpFloatFloat ops) x (fromIntegral y)
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+-- XXX FIXME
+binOp ops _other1 _other2 = error $ "binary operator on non ints or floats"
+
+{-
+multiply :: HeapObject -> HeapObject -> Eval ()
+multiply (IntObject x) (IntObject y) = do
+   let resultObject = IntObject (x * y)
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+multiply (FloatObject x) (FloatObject y) = do
+   let resultObject = FloatObject (x * y)
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+multiply (IntObject x) (FloatObject y) = do
+   let resultObject = FloatObject (fromIntegral x * y)
+   objectID <- allocateHeapObject resultObject
+   pushStack objectID
+multiply (FloatObject x) (FloatObject y) = do
+   let resultObject = FloatObject (x * fromIntegral y)
    objectID <- allocateHeapObject resultObject
    pushStack objectID
 -- XXX FIXME
 multiply _other1 _other2 = error $ "Multiply on non ints or floats"
+-}
 
 -- Load a PyObject from a pyc file into a heap, turning
 -- each nested PyObject into its corresponding Object.

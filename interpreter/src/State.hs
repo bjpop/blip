@@ -1,4 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      : State 
@@ -28,8 +28,11 @@ module State
    , popStackMaybe
    , popStack
    , returnNone
+   , lookupName
    )  where
 
+import Data.Word (Word16)
+import Data.Vector as Vector (length, (!))
 import qualified Data.Map as Map (insert, lookup, empty)
 import Data.Map (Map)
 import Control.Monad.State.Strict as State hiding (State)
@@ -139,3 +142,20 @@ popStack = do
    case topMaybe of
       Nothing -> error $ "attempt to pop empty stack"
       Just x -> return x
+
+lookupName :: ObjectID -> Word16 -> Eval String
+lookupName namesTupleID arg = do 
+   namesTupleObject <- lookupHeap namesTupleID 
+   case namesTupleObject of
+      TupleObject {..} -> do
+         let tupleSize = Vector.length tupleObject_elements
+             arg64 = fromIntegral arg
+         if arg64 < 0 || arg64 >= tupleSize
+            then error $ "index into name tuple out of bounds"
+            else do
+               let unicodeObjectID = tupleObject_elements ! arg64
+               unicodeObject <- lookupHeap unicodeObjectID
+               case unicodeObject of
+                  UnicodeObject {..} -> return unicodeObject_value
+                  other -> error $ "name does not point to a unicode object: " ++ show other
+      other -> error $ "names tuple not a tuple: " ++ show other
