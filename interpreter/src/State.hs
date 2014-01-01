@@ -16,6 +16,7 @@ module State
    ( runEvalMonad
    , initState
    , allocateHeapObject
+   , allocateHeapObjectPush
    , getNextObjectID
    , insertHeap
    , lookupHeap
@@ -28,8 +29,13 @@ module State
    , pushStack
    , popStackMaybe
    , popStack
+   , popStackObject
+   , peekStackMaybe
+   , peekStack
+   , peekStackObject
    , returnNone
    , lookupName
+   , lookupConst
    )  where
 
 import Data.Word (Word16)
@@ -67,6 +73,10 @@ allocateHeapObject object = do
    objectID <- getNextObjectID
    insertHeap objectID object
    return objectID
+
+allocateHeapObjectPush :: HeapObject -> Eval ()
+allocateHeapObjectPush object =
+   allocateHeapObject object >>= pushStack
 
 -- post increments the counter
 getNextObjectID :: Eval ObjectID
@@ -148,6 +158,26 @@ popStack = do
       Nothing -> error $ "attempt to pop empty stack"
       Just x -> return x
 
+popStackObject :: Eval HeapObject
+popStackObject = popStack >>= lookupHeap
+
+peekStackMaybe :: Eval (Maybe StackObject)
+peekStackMaybe = do
+   stack <- gets evalState_stack
+   case stack of
+      [] -> return Nothing
+      top:_bottom -> return $ Just top 
+
+peekStack :: Eval StackObject
+peekStack = do
+   objectMaybe <- peekStackMaybe
+   case objectMaybe of
+      Nothing -> error $ "attempt to peek an empty stack"
+      Just x -> return x
+
+peekStackObject :: Eval HeapObject
+peekStackObject = peekStack >>= lookupHeap
+
 lookupName :: ObjectID -> Word16 -> Eval String
 lookupName namesTupleID arg = do 
    namesTupleObject <- lookupHeap namesTupleID 
@@ -163,4 +193,16 @@ lookupName namesTupleID arg = do
                case unicodeObject of
                   UnicodeObject {..} -> return unicodeObject_value
                   other -> error $ "name does not point to a unicode object: " ++ show other
+      other -> error $ "names tuple not a tuple: " ++ show other
+
+lookupConst :: ObjectID -> Word16 -> Eval ObjectID
+lookupConst constsTupleID arg = do 
+   constsTupleObject <- lookupHeap constsTupleID 
+   case constsTupleObject of
+      TupleObject {..} -> do
+         let tupleSize = Vector.length tupleObject_elements
+             arg64 = fromIntegral arg
+         if arg64 < 0 || arg64 >= tupleSize
+            then error $ "index into const tuple out of bounds"
+            else return $ tupleObject_elements ! arg64
       other -> error $ "names tuple not a tuple: " ++ show other

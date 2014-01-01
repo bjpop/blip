@@ -36,8 +36,9 @@ import Types
 import State 
    ( runEvalMonad, getNextObjectID, insertHeap
    , lookupHeap, initState, getProgramCounter, incProgramCounter
-   , pushStack, popStack, getStack, getGlobal, setGlobal
-   , allocateHeapObject, lookupName, setProgramCounter ) 
+   , pushStack, popStack, popStackObject, getStack, getGlobal, setGlobal
+   , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
+   , peekStack, lookupConst ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
 
@@ -128,15 +129,26 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          pushStack first 
          pushStack third
          pushStack second
-      DUP_TOP -> do
-         first <- popStack
-         pushStack first
+      DUP_TOP -> peekStack >>= pushStack
       DUP_TOP_TWO -> do
-         first <- popStack
-         second <- popStack
+         first <- popStack 
+         second <- peekStack
          pushStack second
          pushStack first
+         pushStack first
       NOP -> return ()
+      UNARY_POSITIVE ->
+         unaryOp (\x -> if x < 0 then negate x else x)
+                 (\x -> if x < 0 then negate x else x)
+      UNARY_NEGATIVE ->
+         unaryOp (\x -> if x > 0 then negate x else x)
+                 (\x -> if x > 0 then negate x else x)
+      UNARY_NOT -> do
+         object <- popStackObject
+         case object of
+            TrueObject -> allocateHeapObjectPush FalseObject
+            FalseObject -> allocateHeapObjectPush TrueObject 
+            _other -> error "not applied to non boolean"
       BINARY_POWER -> binOpPower
       BINARY_MULTIPLY -> binOpMultiply
       BINARY_MODULO -> binOpModulo
@@ -146,13 +158,13 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       -- XXX load name should really look in local scope, then enclosing, then global, then builtins
       LOAD_NAME -> do 
          nameString <- lookupName codeObject_names arg
-         globalID <- getGlobal nameString 
-         pushStack globalID
+         getGlobal nameString >>= pushStack
       STORE_NAME -> do
          nameString <- lookupName codeObject_names arg
          objectID <- popStack
          setGlobal nameString objectID
-      LOAD_CONST -> do
+      LOAD_CONST -> lookupConst codeObject_consts arg >>= pushStack
+{-
          constsTupleObject <- lookupHeap codeObject_consts 
          case constsTupleObject of
             TupleObject {..} -> do
@@ -164,6 +176,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
                      let constObjectID = tupleObject_elements ! arg64
                      pushStack constObjectID 
             other -> error $ "names tuple not a tuple: " ++ show other
+-}
       CALL_FUNCTION -> do
          functionArgs <- replicateM (fromIntegral arg) popStack
          functionObjectID <- popStack
@@ -175,8 +188,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       -- pop block should pop a block off the block stack
       POP_BLOCK -> return ()
       POP_JUMP_IF_FALSE -> do
-         top <- popStack
-         object <- lookupHeap top
+         object <- popStackObject
          case object of
             FalseObject -> setProgramCounter $ fromIntegral arg
             TrueObject -> return ()
@@ -201,6 +213,18 @@ callFunction (Primitive arity name fun) args
    | otherwise =
         error (printf "primitve of arity %d applied to %d arguments"
                arity (List.length args))
+
+unaryOp :: (Int32 -> Int32) -> (Double -> Double) -> Eval()
+unaryOp intOp floatOp = do
+   object <- popStackObject
+   case object of
+      IntObject x -> do
+         let posObject = IntObject $ intOp x
+         allocateHeapObjectPush posObject 
+      FloatObject x -> do
+         let posObject = FloatObject $ floatOp x
+         allocateHeapObjectPush posObject 
+      _other -> error "unary operator applied to non number"
 
 data BinOp =
    BinOp
@@ -286,8 +310,7 @@ binOp ops = do
              binOpFloatFloat ops x (fromIntegral y)
           (_other1, _other2) ->
              error "binary operator called on non int or float arguments"
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
+   allocateHeapObjectPush resultObject
 -- XXX FIXME
 
 -- Load a PyObject from a pyc file into a heap, turning
