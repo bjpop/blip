@@ -176,15 +176,19 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       POP_BLOCK -> return ()
       POP_JUMP_IF_FALSE -> do
          top <- popStack
-         when (top == 0) (setProgramCounter $ fromIntegral arg)
+         object <- lookupHeap top
+         case object of
+            FalseObject -> setProgramCounter $ fromIntegral arg
+            TrueObject -> return ()
+            _other -> error "pop jump if false encountered non bool on stack"
       COMPARE_OP ->
          case arg of
-            0 -> return () -- < 
-            1 -> return () -- <= 
-            2 -> return () -- ==
-            3 -> return () -- !=
-            4 -> evalBinaryOp greaterThan 
-            5 -> return () -- >=
+            0 -> binOpLT -- < 
+            1 -> binOpLTE -- <= 
+            2 -> binOpEQ -- ==
+            3 -> binOpNEQ -- !=
+            4 -> binOpGT 
+            5 -> binOpGTE -- >=
             6 -> return () -- in
             7 -> return () -- not in
             8 -> return () -- is
@@ -194,83 +198,97 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
 callFunction (Primitive arity name fun) args
    | arity == List.length args = fun args
-   | otherwise = error (printf "primitve of arity %d applied to %d arguments"
-                               arity (List.length args))
+   | otherwise =
+        error (printf "primitve of arity %d applied to %d arguments"
+               arity (List.length args))
 
-greaterThan :: HeapObject -> HeapObject -> Eval () 
-greaterThan (IntObject x) (IntObject y) =
-   if y > x then pushStack 1 else pushStack 0
+data BinOp =
+   BinOp
+   { binOpIntInt :: Int32 -> Int32 -> HeapObject 
+   , binOpFloatFloat :: Double -> Double -> HeapObject
+   }
 
-evalBinaryOp :: (HeapObject -> HeapObject -> Eval ()) -> Eval () 
-evalBinaryOp f = do
+binOpCompare :: (Int32 -> Int32 -> Bool) -> (Double -> Double -> Bool) -> Eval ()
+binOpCompare intCompare floatCompare =
+   binOp $ BinOp 
+      (\x y -> if intCompare y x then TrueObject else FalseObject)
+      (\x y -> if floatCompare y x then TrueObject else FalseObject)
+
+binOpGT :: Eval () 
+binOpGT = binOpCompare (>) (>)
+
+binOpLT :: Eval ()
+binOpLT = binOpCompare (<) (<)
+
+binOpLTE :: Eval ()
+binOpLTE = binOpCompare (<=) (<=)
+
+binOpGTE :: Eval ()
+binOpGTE = binOpCompare (>=) (>=)
+
+binOpEQ :: Eval ()
+binOpEQ = binOpCompare (==) (==)
+
+binOpNEQ :: Eval ()
+binOpNEQ = binOpCompare (/=) (/=)
+
+binOpMultiply :: Eval () 
+binOpMultiply =
+   binOp $ BinOp
+      (\x y -> IntObject (y * x))
+      (\x y -> FloatObject (y * x))
+
+binOpPower :: Eval () 
+binOpPower =
+   binOp $ BinOp
+      (\x y -> IntObject (y ^ x))
+      (\x y -> FloatObject (y ** x))
+
+binOpAdd :: Eval () 
+binOpAdd =
+   binOp $ BinOp
+      (\x y -> IntObject (y + x))
+      (\x y -> FloatObject (y + x))
+
+binOpModulo :: Eval () 
+binOpModulo =
+   binOp $ BinOp
+      (\x y -> IntObject (mod y x))
+      (\x y -> FloatObject (mod' y x))
+
+binOpSubtract :: Eval () 
+binOpSubtract =
+   binOp $ BinOp
+      (\x y -> IntObject (y - x))
+      (\x y -> FloatObject (y - x))
+
+binOpDivide :: Eval () 
+binOpDivide =
+   binOp $ BinOp
+      (\x y -> FloatObject ((fromIntegral y) / (fromIntegral x)))
+      (\x y -> FloatObject (y / x))
+
+-- binOp :: BinOp -> HeapObject -> HeapObject ->  Eval ()
+binOp :: BinOp -> Eval ()
+binOp ops = do
    first <- popStack
    second <- popStack
    object1 <- lookupHeap first 
    object2 <- lookupHeap second 
-   f object1 object2 
-
-data BinOp =
-   BinOp
-   { binOp_opcode :: Opcode
-   , binOpIntInt :: Int32 -> Int32 -> Int32
-   , binOpFloatFloat :: Double -> Double -> Double
-   }
-
-binOpMultiply :: Eval () 
-binOpMultiply = evalBinaryOp (binOp $ BinOp BINARY_MULTIPLY (*) (*))
-
-binOpPower :: Eval () 
-binOpPower = evalBinaryOp (binOp $ BinOp BINARY_POWER (flip (^)) (flip (**)))
-
-binOpAdd :: Eval () 
-binOpAdd = evalBinaryOp (binOp $ BinOp BINARY_ADD (+) (+))
-
-binOpModulo :: Eval () 
-binOpModulo = evalBinaryOp (binOp $ BinOp BINARY_MODULO (flip mod) (flip mod'))
-
-binOpSubtract :: Eval () 
-binOpSubtract = evalBinaryOp (binOp $ BinOp BINARY_SUBTRACT (flip (-)) (flip (-)))
-
-binOpDivide :: Eval () 
-binOpDivide = evalBinaryOp (binOp $ BinOp BINARY_TRUE_DIVIDE (flip div) (flip (/)))
-
-binOp :: BinOp -> HeapObject -> HeapObject ->  Eval ()
-binOp ops object1 object2 = do
    let resultObject = case (object1, object2) of
           (IntObject x, IntObject y) ->
-             IntObject $ (binOpIntInt ops) x y
+             binOpIntInt ops x y
           (FloatObject x, FloatObject y) -> 
-             FloatObject $ (binOpFloatFloat ops) x y
+             binOpFloatFloat ops x y
           (IntObject x, FloatObject y) -> 
-             FloatObject $ (binOpFloatFloat ops) (fromIntegral x) y
+             binOpFloatFloat ops (fromIntegral x) y
           (FloatObject x, IntObject y) -> 
-             FloatObject $ (binOpFloatFloat ops) x (fromIntegral y)
+             binOpFloatFloat ops x (fromIntegral y)
+          (_other1, _other2) ->
+             error "binary operator called on non int or float arguments"
    objectID <- allocateHeapObject resultObject
    pushStack objectID
 -- XXX FIXME
-binOp ops _other1 _other2 = error $ "binary operator on non ints or floats"
-
-{-
-multiply :: HeapObject -> HeapObject -> Eval ()
-multiply (IntObject x) (IntObject y) = do
-   let resultObject = IntObject (x * y)
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-multiply (FloatObject x) (FloatObject y) = do
-   let resultObject = FloatObject (x * y)
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-multiply (IntObject x) (FloatObject y) = do
-   let resultObject = FloatObject (fromIntegral x * y)
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
-multiply (FloatObject x) (FloatObject y) = do
-   let resultObject = FloatObject (x * fromIntegral y)
-   objectID <- allocateHeapObject resultObject
-   pushStack objectID
--- XXX FIXME
-multiply _other1 _other2 = error $ "Multiply on non ints or floats"
--}
 
 -- Load a PyObject from a pyc file into a heap, turning
 -- each nested PyObject into its corresponding Object.

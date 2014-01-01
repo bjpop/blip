@@ -19,7 +19,7 @@ module Types
    , ObjectID
    , HeapObject (..)
    , Stack
-   , StackObject (..)
+   , StackObject
    , ProgramCounter
    , Globals 
    , PrimFun
