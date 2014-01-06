@@ -93,6 +93,7 @@ data HeapObject
    | FalseObject
    | ComplexObject { complexObject_real :: !Double, complexObject_imaginary :: !Double }
    | LongObject { longObject_value :: !Integer }
+   | ListObject { listObject_elements :: !(Vector ObjectID) }
    | Primitive
        { primitiveArity :: Int
        , primitiveName :: String

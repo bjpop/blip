@@ -17,7 +17,7 @@ module Interpret (interpretFile) where
 import Data.Fixed (mod')
 import Text.Printf (printf)
 import Data.List as List (length)
-import Control.Monad (replicateM, when)
+import Control.Monad as Monad (replicateM, when)
 import Control.Monad.Trans (liftIO)
 import Control.Applicative ((<$>))
 import System.IO (withFile, IOMode (..))
@@ -30,7 +30,8 @@ import Data.Map (Map)
 import qualified Data.ByteString.Lazy as B (ByteString, index, length)
 import Data.Word (Word8, Word16, Word32)
 import Data.Int (Int32)
-import Data.Vector as Vector (Vector, fromList, length, (!))
+import Data.Vector as Vector
+   ( Vector, fromList, length, (!), replicateM, reverse )
 import Types 
    ( Eval (..), EvalState (..), StackObject ) 
 import State 
@@ -155,37 +156,28 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       BINARY_ADD -> binOpAdd
       BINARY_SUBTRACT -> binOpSubtract
       BINARY_TRUE_DIVIDE -> binOpDivide
+      -- INPLACE_ADD -> 
       -- XXX load name should really look in local scope, then enclosing, then global, then builtins
       LOAD_NAME -> do 
          nameString <- lookupName codeObject_names arg
          getGlobal nameString >>= pushStack
+      BUILD_LIST -> do
+         elementIDs <- Vector.replicateM (fromIntegral arg) popStack
+         allocateHeapObjectPush $ ListObject $ Vector.reverse elementIDs
       STORE_NAME -> do
          nameString <- lookupName codeObject_names arg
          objectID <- popStack
          setGlobal nameString objectID
       LOAD_CONST -> lookupConst codeObject_consts arg >>= pushStack
-{-
-         constsTupleObject <- lookupHeap codeObject_consts 
-         case constsTupleObject of
-            TupleObject {..} -> do
-               let tupleSize = Vector.length tupleObject_elements 
-                   arg64 = fromIntegral arg
-               if arg64 < 0 || arg64 >= tupleSize 
-                  then error $ "index into const tuple out of bounds"
-                  else do
-                     let constObjectID = tupleObject_elements ! arg64
-                     pushStack constObjectID 
-            other -> error $ "names tuple not a tuple: " ++ show other
--}
       CALL_FUNCTION -> do
-         functionArgs <- replicateM (fromIntegral arg) popStack
+         functionArgs <- Monad.replicateM (fromIntegral arg) popStack
          functionObjectID <- popStack
          functionObject <- lookupHeap functionObjectID
          callFunction functionObject functionArgs 
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
-      -- setup loop should push a block onto the block stack
+      -- XXX setup loop should push a block onto the block stack
       SETUP_LOOP -> return ()
-      -- pop block should pop a block off the block stack
+      -- XXX pop block should pop a block off the block stack
       POP_BLOCK -> return ()
       POP_JUMP_IF_FALSE -> do
          object <- popStackObject
