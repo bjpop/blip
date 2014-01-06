@@ -1,2 +1,4 @@
 .cabal-sandbox
 cabal-dev
+*/dist
+*.sandbox.config
