@@ -9,10 +9,7 @@ all configure clean install:
 	$(MAKE) $@ --directory=lib
 	$(MAKE) $@ --directory=compiler
 	$(MAKE) $@ --directory=readpyc
-
-.PHONY: dev
-dev:
-	cabal-dev install lib/ readpyc/ compiler/
+	$(MAKE) $@ --directory=interpreter
 
 .PHONY: test
 test:
