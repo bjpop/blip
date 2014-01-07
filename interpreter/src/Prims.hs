@@ -23,8 +23,8 @@ import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
 import Text.Printf (printf)
 import Types
-   ( ObjectID, Heap, HeapObject (..), ProgramCounter, Stack
-   , StackObject (..), EvalState (..), Eval (..), PrimFun )
+   ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
+   , EvalState (..), Eval (..), PrimFun )
 import State
    ( lookupHeap
    , getNextObjectID
@@ -36,7 +36,7 @@ import State
 
 addPrimGlobal :: Int -> String -> PrimFun -> Eval ()
 addPrimGlobal arity name fun = do
-   let primObject = Primitive arity name fun
+   let primObject = PrimitiveObject arity name fun
    objectID <- allocateHeapObject primObject 
    setGlobal name objectID 
    
@@ -62,7 +62,7 @@ printPrim [x] = do
       return $ printf "%f + %fj" complexObject_real complexObject_imaginary
    toString (LongObject {..}) =
       return $ show longObject_value
-   toString (Primitive {..}) =
+   toString (PrimitiveObject {..}) =
       return $ printf "<prim %s>" primitiveName
    toString (ListObject {..}) = do
       elementObjects <- Vector.mapM lookupHeap listObject_elements

@@ -25,14 +25,16 @@ module State
    , incProgramCounter
    , getGlobal
    , setGlobal
-   , getStack
-   , pushStack
-   , popStackMaybe
-   , popStack
-   , popStackObject
-   , peekStackMaybe
-   , peekStack
-   , peekStackObject
+   , pushFrame
+   , popFrame
+   , getValueStack
+   , pushValueStack
+   , popValueStack
+   , popValueStackObject
+   , peekValueStackFromBottom
+   , peekValueStackFromBottomObject
+   , peekValueStackFromTop
+   , peekValueStackFromTopObject
    , returnNone
    , lookupName
    , lookupConst
@@ -40,20 +42,21 @@ module State
 
 import Data.Word (Word16)
 import Data.Vector as Vector (length, (!))
+import Data.Vector.Generic.Mutable as MVector (write, read, length)
 import qualified Data.Map as Map (insert, lookup, empty)
 import Data.Map (Map)
 import Control.Monad.State.Strict as State hiding (State)
-import Control.Applicative (Applicative (..))
+import Control.Applicative (Applicative (..), (<$>))
 import Types
-   ( ObjectID, Heap, HeapObject (..), ProgramCounter, Stack
-   , StackObject (..), EvalState (..), Eval (..) )
+   ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
+   , EvalState (..), Eval (..) )
+import Text.Printf (printf)
 
 initState =
    EvalState
    { evalState_objectID = 0
    , evalState_heap = Map.empty
-   , evalState_programCounter = 0
-   , evalState_stack = []
+   , evalState_frameStack = []
    , evalState_globals = Map.empty
    }
 
@@ -66,7 +69,7 @@ runEvalMonad (Eval comp) = evalStateT comp
 returnNone :: Eval ()
 returnNone = do
    objectID <- allocateHeapObject NoneObject
-   pushStack objectID
+   pushValueStack objectID
 
 allocateHeapObject :: HeapObject -> Eval ObjectID
 allocateHeapObject object = do
@@ -76,7 +79,7 @@ allocateHeapObject object = do
 
 allocateHeapObjectPush :: HeapObject -> Eval ()
 allocateHeapObjectPush object =
-   allocateHeapObject object >>= pushStack
+   allocateHeapObject object >>= pushValueStack
 
 -- post increments the counter
 getNextObjectID :: Eval ObjectID
@@ -104,20 +107,39 @@ lookupHeap objectID = do
       Nothing -> error $ "Failed to find object on heap: " ++ show objectID
       Just object -> return object
 
+getFrame :: Eval HeapObject
+getFrame = do
+   frameStack <- gets evalState_frameStack
+   case frameStack of
+      [] -> error $ "attempt to get frame from empty stack"
+      heapObject:_rest -> do
+         case heapObject of
+            FrameObject {} -> return heapObject
+            _other -> error $ "top of frame stack not a frame object"
+
+modifyFrame :: (HeapObject -> HeapObject) -> Eval ()
+modifyFrame modifier = do
+   frameStack <- gets evalState_frameStack
+   case frameStack of
+      [] -> error $ "attempt to get frame from empty stack"
+      oldFrame:rest ->
+         modify $ \state -> state { evalState_frameStack = modifier oldFrame:rest }
+
 -- does not increment the counter
 getProgramCounter :: Eval ProgramCounter 
-getProgramCounter = gets evalState_programCounter
+getProgramCounter = frameProgramCounter <$> getFrame
 
 setProgramCounter :: ProgramCounter -> Eval () 
 setProgramCounter pc =
-   modify $ \state -> state { evalState_programCounter = pc } 
+   modifyFrame $ \frame ->
+      let oldPC = frameProgramCounter frame
+      in frame { frameProgramCounter = oldPC + 1 }
 
 incProgramCounter :: ProgramCounter -> Eval ()
 incProgramCounter n = 
-   modify $ \state ->
-      let oldPC = evalState_programCounter state
-          newPC = oldPC + n
-      in state { evalState_programCounter = newPC }
+   modifyFrame $ \frame ->
+      let oldPC = frameProgramCounter frame
+      in frame { frameProgramCounter = oldPC + n }
 
 getGlobal :: String -> Eval ObjectID
 getGlobal name = do
@@ -133,50 +155,81 @@ setGlobal name objectID =
           newGlobals = Map.insert name objectID globals
       in state { evalState_globals = newGlobals } 
 
-getStack :: Eval Stack
-getStack = gets evalState_stack
+popFrame :: Eval ()
+popFrame = do
+   frameStack <- gets evalState_frameStack
+   case frameStack of
+      [] -> error "pop empty frame stack"
+      _top:rest -> modify $ \state -> state { evalState_frameStack = rest }
 
-pushStack :: StackObject -> Eval ()
-pushStack stackObject =
-   modify $ \state ->
-      let stack = evalState_stack state
-      in state { evalState_stack = stackObject : stack }
+pushFrame :: HeapObject -> Eval ()
+pushFrame frameObject =
+   modify $ \state -> 
+      let frameStack = evalState_frameStack state
+          newFrameStack = frameObject : frameStack
+      in state { evalState_frameStack = newFrameStack }
 
-popStackMaybe :: Eval (Maybe StackObject)
-popStackMaybe = do
-   stack <- gets evalState_stack
-   case stack of
-      [] -> return Nothing
-      top:bottom -> do 
-         modify $ \state -> state { evalState_stack = bottom }
-         return $ Just top 
+getValueStack :: Eval ValueStack
+getValueStack = frameValueStack <$> getFrame
 
-popStack :: Eval StackObject
-popStack = do
-   topMaybe <- popStackMaybe
-   case topMaybe of
-      Nothing -> error $ "attempt to pop empty stack"
-      Just x -> return x
+mywrite vector position value = do
+   let vectorSize = MVector.length vector
+   liftIO $ printf "Vector size: %d\n" vectorSize
+   liftIO $ printf "position: %d\n" position
+   liftIO $ MVector.write vector position value
 
-popStackObject :: Eval HeapObject
-popStackObject = popStack >>= lookupHeap
+-- stack pointer points to the item on top of the stack
+pushValueStack :: ObjectID -> Eval ()
+pushValueStack objectID = do
+   oldFrame <- getFrame
+   let oldStackPointer = frameStackPointer oldFrame
+       newStackPointer = oldStackPointer + 1
+       valueStack = frameValueStack oldFrame
+   -- XXX this may fail if the stack pointer is out of range
+   liftIO $ MVector.write valueStack newStackPointer objectID
+   -- mywrite valueStack newStackPointer objectID
+   let newFrame = oldFrame { frameStackPointer = newStackPointer }
+   modifyFrame $ \_ignore -> newFrame 
 
-peekStackMaybe :: Eval (Maybe StackObject)
-peekStackMaybe = do
-   stack <- gets evalState_stack
-   case stack of
-      [] -> return Nothing
-      top:_bottom -> return $ Just top 
+popValueStack :: Eval ObjectID
+popValueStack = do
+   oldFrame <- getFrame
+   let oldStackPointer = frameStackPointer oldFrame
+       newStackPointer = oldStackPointer - 1
+       valueStack = frameValueStack oldFrame
+   -- XXX this may fail if the stack pointer is out of range
+   objectID <- liftIO $ MVector.read valueStack oldStackPointer
+   let newFrame = oldFrame { frameStackPointer = newStackPointer }
+   modifyFrame $ \_ignore -> newFrame 
+   return objectID
 
-peekStack :: Eval StackObject
-peekStack = do
-   objectMaybe <- peekStackMaybe
-   case objectMaybe of
-      Nothing -> error $ "attempt to peek an empty stack"
-      Just x -> return x
+popValueStackObject :: Eval HeapObject
+popValueStackObject = popValueStack >>= lookupHeap
 
-peekStackObject :: Eval HeapObject
-peekStackObject = peekStack >>= lookupHeap
+peekValueStackFromTop :: Int -> Eval ObjectID
+peekValueStackFromTop offset = do
+   frame <- getFrame
+   let stackPointer = frameStackPointer frame 
+       valueStack = frameValueStack frame 
+   -- XXX this may fail if the stack pointer is out of range
+   objectID <- liftIO $ MVector.read valueStack (stackPointer - offset) 
+   return objectID
+
+peekValueStackFromTopObject :: Int -> Eval HeapObject
+peekValueStackFromTopObject offset =
+   peekValueStackFromTop offset >>= lookupHeap
+
+peekValueStackFromBottom :: Int -> Eval ObjectID
+peekValueStackFromBottom offset = do
+   frame <- getFrame
+   let valueStack = frameValueStack frame 
+   -- XXX this may fail if the stack pointer is out of range
+   objectID <- liftIO $ MVector.read valueStack offset 
+   return objectID
+
+peekValueStackFromBottomObject :: Int -> Eval HeapObject
+peekValueStackFromBottomObject offset =
+   peekValueStackFromBottom offset >>= lookupHeap
 
 lookupName :: ObjectID -> Word16 -> Eval String
 lookupName namesTupleID arg = do 

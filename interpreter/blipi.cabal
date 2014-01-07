@@ -29,7 +29,8 @@ Executable blipi {
      mtl==2.1.*,
      containers==0.5.*,
      bytestring==0.10.*,
-     vector==0.10.*
+     vector==0.10.*,
+     primitive==0.5.*
   other-modules:
      ProgName
      Interpret

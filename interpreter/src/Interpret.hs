@@ -31,15 +31,16 @@ import qualified Data.ByteString.Lazy as B (ByteString, index, length)
 import Data.Word (Word8, Word16, Word32)
 import Data.Int (Int32)
 import Data.Vector as Vector
-   ( Vector, fromList, length, (!), replicateM, reverse )
+   ( Vector, fromList, length, (!), replicateM, reverse, empty )
+import Data.Vector.Generic.Mutable as MVector (new)
 import Types 
-   ( Eval (..), EvalState (..), StackObject ) 
+   ( Eval (..), EvalState (..) ) 
 import State 
    ( runEvalMonad, getNextObjectID, insertHeap
    , lookupHeap, initState, getProgramCounter, incProgramCounter
-   , pushStack, popStack, popStackObject, getStack, getGlobal, setGlobal
+   , pushValueStack, popValueStack, popValueStackObject, getValueStack, getGlobal, setGlobal
    , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
-   , peekStack, lookupConst ) 
+   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
 
@@ -62,21 +63,31 @@ initGlobals = do
 runTopObjectEval :: PyObject -> Eval ()
 runTopObjectEval object = do
    objectID <- loadIntoHeap object
+   heapObject <- lookupHeap objectID
+   let stackSize = getCodeStackSize heapObject 
+   valueStack <- liftIO $ MVector.new $ fromIntegral stackSize
+   let newFrame =
+          FrameObject
+          { frameCode = objectID
+          , frameValueStack = valueStack
+          , frameStackPointer = -1 -- empty stack
+          , frameProgramCounter = 0
+          }
+   pushFrame newFrame
    evalTopObject objectID
 
 evalTopObject :: ObjectID -> Eval ()
 evalTopObject objectID = do
    heapObject <- lookupHeap objectID
    case heapObject of
-      CodeObject {} -> evalCodeObject heapObject
+      CodeObject {} -> evalCodeObject heapObject >> return ()
       _other -> return ()
 
-evalCodeObject :: HeapObject -> Eval ()
+evalCodeObject :: HeapObject -> Eval ObjectID
 evalCodeObject object@(CodeObject {..}) = do
    pc <- getProgramCounter
-   stack <- getStack
+   stack <- getValueStack
    -- liftIO $ printf "Program counter: %d\n" pc
-   -- liftIO $ printf "Stack: %s\n" (show stack)
    bytecodeObject <- lookupHeap codeObject_code
    let code = 
           case bytecodeObject of
@@ -85,7 +96,7 @@ evalCodeObject object@(CodeObject {..}) = do
    let numInstructions = B.length code 
    -- check the program counter is in valid range
    if pc < 0 || pc >= numInstructions
-      then return ()
+      then error $ printf "Bad program counter %d" pc
       else do
          let nextOpCodeWord8 = B.index code pc
          case Map.lookup nextOpCodeWord8 word8ToOpcode of
@@ -107,7 +118,8 @@ evalCodeObject object@(CodeObject {..}) = do
                -- evalCodeObject object
 evalCodeObject other = error ("try to eval non code object: " ++ show other)
 
-evalOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
+evalOpCode :: HeapObject -> Opcode -> Word16 -> Eval ObjectID
+evalOpCode _codeObject RETURN_VALUE _arg = popValueStack
 evalOpCode codeObject opcode arg =
    evalOneOpCode codeObject opcode arg >> evalCodeObject codeObject
 
@@ -116,27 +128,26 @@ evalOpCode codeObject opcode arg =
 evalOneOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
 evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
    case opcode of
-      POP_TOP -> popStack >> return () 
+      POP_TOP -> popValueStack >> return () 
       ROT_TWO -> do
-         first <- popStack
-         second <- popStack
-         pushStack first 
-         pushStack second 
+         first <- popValueStack
+         second <- popValueStack
+         pushValueStack first 
+         pushValueStack second 
       -- (first:second:third:rest) -> (second:third:first:rest)
       ROT_THREE -> do
-         first <- popStack
-         second <- popStack
-         third <- popStack
-         pushStack first 
-         pushStack third
-         pushStack second
-      DUP_TOP -> peekStack >>= pushStack
+         first <- popValueStack
+         second <- popValueStack
+         third <- popValueStack
+         pushValueStack first 
+         pushValueStack third
+         pushValueStack second
+      DUP_TOP -> peekValueStackFromTop 0 >>= pushValueStack
       DUP_TOP_TWO -> do
-         first <- popStack 
-         second <- peekStack
-         pushStack second
-         pushStack first
-         pushStack first
+         first <- peekValueStackFromTop 0 
+         second <- peekValueStackFromTop 1
+         pushValueStack second
+         pushValueStack first
       NOP -> return ()
       UNARY_POSITIVE ->
          unaryOp (\x -> if x < 0 then negate x else x)
@@ -145,7 +156,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          unaryOp (\x -> if x > 0 then negate x else x)
                  (\x -> if x > 0 then negate x else x)
       UNARY_NOT -> do
-         object <- popStackObject
+         object <- popValueStackObject
          case object of
             TrueObject -> allocateHeapObjectPush FalseObject
             FalseObject -> allocateHeapObjectPush TrueObject 
@@ -160,18 +171,18 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       -- XXX load name should really look in local scope, then enclosing, then global, then builtins
       LOAD_NAME -> do 
          nameString <- lookupName codeObject_names arg
-         getGlobal nameString >>= pushStack
+         getGlobal nameString >>= pushValueStack
       BUILD_LIST -> do
-         elementIDs <- Vector.replicateM (fromIntegral arg) popStack
+         elementIDs <- Vector.replicateM (fromIntegral arg) popValueStack
          allocateHeapObjectPush $ ListObject $ Vector.reverse elementIDs
       STORE_NAME -> do
          nameString <- lookupName codeObject_names arg
-         objectID <- popStack
+         objectID <- popValueStack
          setGlobal nameString objectID
-      LOAD_CONST -> lookupConst codeObject_consts arg >>= pushStack
+      LOAD_CONST -> lookupConst codeObject_consts arg >>= pushValueStack
       CALL_FUNCTION -> do
-         functionArgs <- Monad.replicateM (fromIntegral arg) popStack
-         functionObjectID <- popStack
+         functionArgs <- Monad.replicateM (fromIntegral arg) popValueStack
+         functionObjectID <- popValueStack
          functionObject <- lookupHeap functionObjectID
          callFunction functionObject functionArgs 
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
@@ -180,7 +191,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       -- XXX pop block should pop a block off the block stack
       POP_BLOCK -> return ()
       POP_JUMP_IF_FALSE -> do
-         object <- popStackObject
+         object <- popValueStackObject
          case object of
             FalseObject -> setProgramCounter $ fromIntegral arg
             TrueObject -> return ()
@@ -191,24 +202,49 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
             1 -> binOpLTE -- <= 
             2 -> binOpEQ -- ==
             3 -> binOpNEQ -- !=
-            4 -> binOpGT 
+            4 -> binOpGT -- >
             5 -> binOpGTE -- >=
             6 -> return () -- in
             7 -> return () -- not in
             8 -> return () -- is
             9 -> return () -- is not
+      MAKE_FUNCTION -> do
+         functionNameID <- popValueStack
+         codeObjectID <- popValueStack
+         allocateHeapObjectPush $ FunctionObject functionNameID codeObjectID
+      LOAD_FAST ->
+         peekValueStackFromBottom (fromIntegral arg) >>= pushValueStack 
       _otherOpCode -> return ()
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
-callFunction (Primitive arity name fun) args
+callFunction (PrimitiveObject arity name fun) args
    | arity == List.length args = fun args
    | otherwise =
         error (printf "primitve of arity %d applied to %d arguments"
                arity (List.length args))
+callFunction (FunctionObject nameObjectID codeObjectID) args = do
+   codeObject <- lookupHeap codeObjectID
+   let stackSize = getCodeStackSize codeObject + (fromIntegral $ List.length args)
+   valueStack <- liftIO $ MVector.new $ fromIntegral stackSize
+   let newFrame =
+          FrameObject
+          { frameCode = codeObjectID 
+          , frameValueStack = valueStack 
+          , frameStackPointer = -1 -- empty stack
+          , frameProgramCounter = 0
+          }
+   pushFrame newFrame
+   mapM_ pushValueStack args
+   codeObject <- lookupHeap codeObjectID
+   resultObjectID <- evalCodeObject codeObject
+   evalCodeObject codeObject
+   popFrame
+   pushValueStack resultObjectID
+callFunction other args = error $ "call to unsupported object " ++ show other
 
 unaryOp :: (Int32 -> Int32) -> (Double -> Double) -> Eval()
 unaryOp intOp floatOp = do
-   object <- popStackObject
+   object <- popValueStackObject
    case object of
       IntObject x -> do
          let posObject = IntObject $ intOp x
@@ -287,8 +323,8 @@ binOpDivide =
 -- binOp :: BinOp -> HeapObject -> HeapObject ->  Eval ()
 binOp :: BinOp -> Eval ()
 binOp ops = do
-   first <- popStack
-   second <- popStack
+   first <- popValueStack
+   second <- popValueStack
    object1 <- lookupHeap first 
    object2 <- lookupHeap second 
    let resultObject = case (object1, object2) of
@@ -360,3 +396,7 @@ atomicPyObjectToHeapObject (Int val) = IntObject $ fromIntegral val
 atomicPyObjectToHeapObject (String val) = StringObject val
 atomicPyObjectToHeapObject other
    = error ("atomicPyObjectToHeapObject applied to non-atomic object: " ++ show other)
+
+getCodeStackSize :: HeapObject -> Word32
+getCodeStackSize (CodeObject {..}) = codeObject_stacksize
+getCodeStackSize other = error $ "attempt to get stack size from non-code object: " ++ show other 

@@ -18,8 +18,7 @@ module Types
    , Heap
    , ObjectID
    , HeapObject (..)
-   , Stack
-   , StackObject
+   , ValueStack
    , ProgramCounter
    , Globals 
    , PrimFun
@@ -32,7 +31,8 @@ import Control.Applicative (Applicative (..))
 import qualified Data.ByteString.Lazy as B (ByteString)
 import Data.Word (Word8, Word16, Word32, Word64)
 import Data.Int (Int64, Int32)
-import Data.Vector (Vector)
+import Data.Vector (MVector, Vector)
+import Control.Monad.Primitive (RealWorld)
 
 type PrimFun = [ObjectID] -> Eval ()
 
@@ -40,9 +40,8 @@ data EvalState =
    EvalState 
    { evalState_objectID :: !ObjectID
    , evalState_heap :: !Heap
-   , evalState_programCounter :: !ProgramCounter
-   , evalState_stack :: !Stack
    , evalState_globals :: !Globals
+   , evalState_frameStack :: ![HeapObject] -- list of FrameObjects
    }
 
 newtype Eval a
@@ -56,9 +55,7 @@ instance MonadState EvalState Eval where
 type ProgramCounter = Int64
 type ObjectID = Word64
 type Heap = Map ObjectID HeapObject
-type Stack = [StackObject]
-
-type StackObject = ObjectID
+type ValueStack = MVector RealWorld ObjectID 
 
 -- hack to get things working, 
 -- should really be a dictionary object on the heap
@@ -93,12 +90,38 @@ data HeapObject
    | FalseObject
    | ComplexObject { complexObject_real :: !Double, complexObject_imaginary :: !Double }
    | LongObject { longObject_value :: !Integer }
+     -- XXX list should have an MVector RealWorld, so we can mutate the values.
    | ListObject { listObject_elements :: !(Vector ObjectID) }
-   | Primitive
-       { primitiveArity :: Int
-       , primitiveName :: String
-       , primitiveFun :: PrimFun
+   | PrimitiveObject
+       { primitiveArity :: !Int
+       , primitiveName :: !String
+       , primitiveFun :: !PrimFun
+       }
+   | FunctionObject
+       { functionName :: !ObjectID
+       , functionCode :: !ObjectID
+       }
+   | FrameObject
+       { frameCode :: !ObjectID
+       , frameValueStack :: !ValueStack
+       , frameStackPointer :: !Int
+       , frameProgramCounter :: !ProgramCounter
+       -- locals, globals, builtins
        }
 
 instance Show HeapObject where
-   show object = "heap object"
+   show (CodeObject {}) = "code object"
+   show (StringObject {}) = "string object"
+   show (TupleObject {}) = "tuple object"
+   show (IntObject {}) = "int object"
+   show (FloatObject {}) = "float object"
+   show (NoneObject) = "none object"
+   show (EllipsisObject) = "ellipsis object"
+   show (UnicodeObject {}) = "unicode object"
+   show (TrueObject) = "true object"
+   show (FalseObject) = "false object"
+   show (ComplexObject {}) = "complex object"
+   show (LongObject {}) = "long object"
+   show (ListObject {}) = "list object"
+   show (PrimitiveObject {}) = "primitive object"
+   show (FunctionObject {}) = "function object"
