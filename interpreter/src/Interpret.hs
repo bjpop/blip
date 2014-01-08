@@ -192,6 +192,9 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          functionObject <- lookupHeap functionObjectID
          callFunction functionObject $ List.reverse functionArgs
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
+      -- program counter has already been advanced (by 3) to the next instruction
+      -- the bytecode takes this into consideration
+      JUMP_FORWARD -> incProgramCounter $ fromIntegral arg
       -- XXX setup loop should push a block onto the block stack
       SETUP_LOOP -> return ()
       -- XXX pop block should pop a block off the block stack
