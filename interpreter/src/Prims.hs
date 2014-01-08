@@ -18,6 +18,7 @@ module Prims
    , returnNone
    )  where
 
+import Data.ByteString.Lazy.Char8 as BS (unpack)
 import Data.Vector as Vector (mapM, toList)
 import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
@@ -49,13 +50,13 @@ printPrim [x] = do
    where
    toString :: HeapObject -> Eval String
    toString (CodeObject {}) = return $ printf "<code %d>" x
-   toString (StringObject {..}) = return $ show stringObject_string
+   toString (StringObject {..}) = return $ BS.unpack stringObject_string
    toString (TupleObject {..}) = return $ "<tuple>"
    toString (IntObject {..}) = return $ show initObject_value
    toString (FloatObject {..}) = return $ show floatObject_value 
    toString NoneObject = return "None"
    toString EllipsisObject = return "..."
-   toString (UnicodeObject {..}) = return $ "'" ++ unicodeObject_value ++ "'"
+   toString (UnicodeObject {..}) = return $ unicodeObject_value
    toString TrueObject = return $ "True"
    toString FalseObject = return $ "False"
    toString (ComplexObject {..}) =
