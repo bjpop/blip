@@ -38,6 +38,7 @@ module State
    , returnNone
    , lookupName
    , lookupConst
+   , dumpStack
    )  where
 
 import Data.Word (Word16)
@@ -259,3 +260,17 @@ lookupConst constsTupleID arg = do
             then error $ "index into const tuple out of bounds"
             else return $ tupleObject_elements ! arg64
       other -> error $ "names tuple not a tuple: " ++ show other
+
+dumpStack :: Eval ()
+dumpStack = do
+   stack <- getValueStack
+   let size = MVector.length stack
+   dumper stack 0 (size - 1)
+   where
+   dumper :: ValueStack -> Int -> Int -> Eval ()
+   dumper stack n m
+      | n < m = do
+           objectID <- liftIO $ MVector.read stack n
+           liftIO $ printf "%d %d\n" n objectID
+           dumper stack (n + 1) m
+      | otherwise = return () 

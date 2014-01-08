@@ -16,7 +16,7 @@ module Interpret (interpretFile) where
 
 import Data.Fixed (mod')
 import Text.Printf (printf)
-import Data.List as List (length)
+import Data.List as List (length, reverse)
 import Control.Monad as Monad (replicateM, when)
 import Control.Monad.Trans (liftIO)
 import Control.Applicative ((<$>))
@@ -40,7 +40,8 @@ import State
    , lookupHeap, initState, getProgramCounter, incProgramCounter
    , pushValueStack, popValueStack, popValueStackObject, getValueStack, getGlobal, setGlobal
    , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
-   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
+   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame
+   , dumpStack ) 
 import Types (ObjectID, Heap, HeapObject (..))
 import Prims (printPrim, addPrimGlobal)
 
@@ -172,8 +173,12 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       LOAD_NAME -> do 
          nameString <- lookupName codeObject_names arg
          getGlobal nameString >>= pushValueStack
+      LOAD_GLOBAL -> do 
+         nameString <- lookupName codeObject_names arg
+         getGlobal nameString >>= pushValueStack
       BUILD_LIST -> do
          elementIDs <- Vector.replicateM (fromIntegral arg) popValueStack
+         -- arguments are popped off the stack in reverse order
          allocateHeapObjectPush $ ListObject $ Vector.reverse elementIDs
       STORE_NAME -> do
          nameString <- lookupName codeObject_names arg
@@ -181,10 +186,11 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          setGlobal nameString objectID
       LOAD_CONST -> lookupConst codeObject_consts arg >>= pushValueStack
       CALL_FUNCTION -> do
+         -- dumpStack
          functionArgs <- Monad.replicateM (fromIntegral arg) popValueStack
          functionObjectID <- popValueStack
          functionObject <- lookupHeap functionObjectID
-         callFunction functionObject functionArgs 
+         callFunction functionObject $ List.reverse functionArgs
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
       -- XXX setup loop should push a block onto the block stack
       SETUP_LOOP -> return ()
@@ -214,7 +220,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          allocateHeapObjectPush $ FunctionObject functionNameID codeObjectID
       LOAD_FAST ->
          peekValueStackFromBottom (fromIntegral arg) >>= pushValueStack 
-      _otherOpCode -> return ()
+      otherOpCode -> error $ "unsupported opcode: " ++ show otherOpCode
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
 callFunction (PrimitiveObject arity name fun) args
@@ -240,7 +246,9 @@ callFunction (FunctionObject nameObjectID codeObjectID) args = do
    evalCodeObject codeObject
    popFrame
    pushValueStack resultObjectID
-callFunction other args = error $ "call to unsupported object " ++ show other
+callFunction other args = do
+   -- dumpStack
+   error $ "call to unsupported object " ++ show other
 
 unaryOp :: (Int32 -> Int32) -> (Double -> Double) -> Eval()
 unaryOp intOp floatOp = do
