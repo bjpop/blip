@@ -132,9 +132,7 @@ getProgramCounter = frameProgramCounter <$> getFrame
 
 setProgramCounter :: ProgramCounter -> Eval () 
 setProgramCounter pc =
-   modifyFrame $ \frame ->
-      let oldPC = frameProgramCounter frame
-      in frame { frameProgramCounter = oldPC + 1 }
+   modifyFrame $ \frame -> frame { frameProgramCounter = pc }
 
 incProgramCounter :: ProgramCounter -> Eval ()
 incProgramCounter n = 
