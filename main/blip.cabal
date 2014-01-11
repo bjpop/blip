@@ -1,6 +1,6 @@
-Name:                blipi
+Name:                blip
 Version:             0.2.1
-Synopsis:            Python bytecode interpreter.
+Synopsis:            Python bytecode compiler and interpreter.
 Homepage:            https://github.com/bjpop/blip  
 License:             BSD3
 License-file:        LICENSE
@@ -11,7 +11,7 @@ category:            Language
 Build-type:          Simple
 Cabal-version:       >=1.8
 Description:
-  Simple reference implementation of a bytecode interpreter for Python 3.
+   Main entry point for Python bytecode compiler and interpreter.
 
 source-repository head
   type: git
@@ -19,10 +19,11 @@ source-repository head
 
 Executable blipi {
   ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
-  main-is: Main.hs
+  main-is: MainInterpreter.hs
   hs-source-dirs: src
   build-depends: base==4.*,
      bliplib == 0.2.*,
+     blipinterpreter == 0.2.*,
      filepath == 1.3.*,
      parseargs == 0.1.* ,
      language-python==0.4.*,
@@ -32,9 +33,26 @@ Executable blipi {
      vector==0.10.*,
      primitive==0.5.*
   other-modules:
-     ProgName
-     Interpret
-     Types
-     State
-     Prims
+     ProgNameInterpreter
+}
+
+Executable blip {
+  ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
+  main-is: MainCompiler.hs
+  hs-source-dirs: src
+  build-depends: base==4.*,
+     bliplib == 0.2.*,
+     blipcompiler == 0.2.*,
+     -- directory == 1.2.*,
+     filepath == 1.3.*,
+     parseargs == 0.1.* ,
+     language-python==0.4.*,
+     mtl==2.1.*,
+     containers==0.5.*,
+     bytestring==0.10.*,
+     old-time==1.1.*,
+     pretty==1.1.*
+     -- utf8-string==0.3.*
+  other-modules:
+     ProgNameCompiler
 }

@@ -1,8 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Assemble
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.Assemble
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -12,15 +12,15 @@
 --
 -----------------------------------------------------------------------------
 
-module Assemble (assemble) where
+module Blip.Compiler.Assemble (assemble) where
  
-import Utils (isRelativeJump, isAbsoluteJump)
-import Types (BlockState (..), AnnotatedCode (..), LabelMap)
-import State (getBlockState, getLabelMap, modifyBlockState)
-import Blip.Bytecode (Bytecode (..), BytecodeArg (..), bytecodeSize)
-import Monad (Compile (..))
 import Data.Map as Map (lookup)
 import Data.Word (Word16)
+import Blip.Bytecode (Bytecode (..), BytecodeArg (..), bytecodeSize)
+import Blip.Compiler.State (getBlockState, getLabelMap, modifyBlockState)
+import Blip.Compiler.Utils (isRelativeJump, isAbsoluteJump)
+import Blip.Compiler.Types (BlockState (..), AnnotatedCode (..), LabelMap)
+import Blip.Compiler.Monad (Compile (..))
 
 assemble :: Compile ()
 assemble = do

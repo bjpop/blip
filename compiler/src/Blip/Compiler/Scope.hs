@@ -2,8 +2,8 @@
 
 -----------------------------------------------------------------------------
 -- |
--- Module      : Scope
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.Scope
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -45,11 +45,11 @@
 -- 
 -----------------------------------------------------------------------------
 
-module Scope
+module Blip.Compiler.Scope
    (topScope, renderScope)
    where
 
-import Types
+import Blip.Compiler.Types
    ( Identifier, VarSet, LocalScope (..)
    , NestedScope (..), ScopeIdentifier, ParameterTypes (..) )
 import Data.Set as Set
@@ -71,8 +71,8 @@ import Text.PrettyPrint.HughesPJ as Pretty
    ( Doc, ($$), nest, text, vcat, hsep, ($+$), (<+>), empty
    , render, parens, comma, int, hcat )
 import Blip.Pretty (Pretty (..))
-import State (emptyVarSet, emptyParameterTypes)
-import Utils ( identsFromParameters, spanToScopeIdentifier
+import Blip.Compiler.State (emptyVarSet, emptyParameterTypes)
+import Blip.Compiler.Utils ( identsFromParameters, spanToScopeIdentifier
              , fromIdentString, maybeToList )
 
 type ScopeM a = ReaderT VarSet IO a

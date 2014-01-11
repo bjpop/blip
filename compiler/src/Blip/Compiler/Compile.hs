@@ -2,8 +2,8 @@
     PatternGuards, RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Compile
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.Compile
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -42,16 +42,16 @@
 --
 -----------------------------------------------------------------------------
 
-module Compile (compileFile, writePycFile) where
+module Blip.Compiler.Compile (compileFile, writePycFile) where
 
 import Prelude hiding (mapM)
-import Desugar (desugarComprehension, desugarWith, resultName)
-import Utils 
+import Blip.Compiler.Desugar (desugarComprehension, desugarWith, resultName)
+import Blip.Compiler.Utils 
    ( isPureExpr, isPyObjectExpr, mkAssignVar, mkList
    , mkVar, mkMethodCall, mkStmtExpr, mkSet, mkDict, mkAssign
    , mkSubscript, mkReturn, mkYield, spanToScopeIdentifier )
-import StackDepth (maxStackDepth)
-import State
+import Blip.Compiler.StackDepth (maxStackDepth)
+import Blip.Compiler.State
    ( setBlockState, getBlockState, initBlockState, initState
    , emitCodeNoArg, emitCodeArg, compileConstantEmit
    , compileConstant, getFileName, newLabel, labelNextInstruction
@@ -61,14 +61,14 @@ import State
    , lookupNameVar, lookupClosureVar, setFlag
    , peekFrameBlock, withFrameBlock, setFastLocals, setArgCount
    , setLineNumber, setFirstLineNumber )
-import Assemble (assemble)
-import Monad (Compile (..), runCompileMonad)
-import Types
+import Blip.Compiler.Assemble (assemble)
+import Blip.Compiler.Monad (Compile (..), runCompileMonad)
+import Blip.Compiler.Types
    ( Identifier, CompileConfig (..)
    , CompileState (..), BlockState (..)
    , AnnotatedCode (..), Dumpable (..), IndexedVarSet, VarInfo (..)
    , FrameBlockInfo (..), Context (..), ParameterTypes (..), LocalScope (..) )
-import Scope (topScope, renderScope)
+import Blip.Compiler.Scope (topScope, renderScope)
 import Blip.Marshal as Blip
    ( writePyc, PycFile (..), PyObject (..), co_generator )
 import Blip.Bytecode (Opcode (..), encode)

@@ -20,8 +20,8 @@ import System.Console.ParseArgs
    (Argtype (..), argDataRequired, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..), getRequiredArg)
 import Blip.Version (versionString)
-import Interpret (interpretFile)
-import ProgName (progName)
+import ProgNameInterpreter (progName)
+import Blip.Interpreter.Interpret (interpretFile)
 
 main :: IO ()
 main = do

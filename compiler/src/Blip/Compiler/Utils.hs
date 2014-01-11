@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Utils
+-- Module      : Blip.Compiler.Utils
 -- Copyright   : (c) 2012, 2013 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
@@ -12,7 +12,7 @@
 -- anywhere else.
 --
 -----------------------------------------------------------------------------
-module Utils
+module Blip.Compiler.Utils
    ( isJump, isRelativeJump, isAbsoluteJump, isJumpBytecode, isPureExpr
    , isPyObjectExpr, isUnconditionalJump, isConditionalJump, mkVar, mkReturn
    , mkIdent, mkAssign, mkAssignVar, mkList, mkMethodCall, mkStmtExpr, mkSet
@@ -26,7 +26,7 @@ import Language.Python.Common.AST as AST
    ( ExprSpan, Expr (..), Statement (..), StatementSpan, Ident (..)
    , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
 import Language.Python.Common.SrcLocation (SrcSpan (..))
-import Types (Identifier, ScopeIdentifier, ParameterTypes (..))
+import Blip.Compiler.Types (Identifier, ScopeIdentifier, ParameterTypes (..))
 
 getSpanLine :: SrcSpan -> Maybe Int
 getSpanLine (SpanCoLinear {..}) = Just span_row

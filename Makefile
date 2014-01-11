@@ -1,4 +1,4 @@
-# Copyright   : (c) 2012, 2013 Bernie Pope
+# Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 # License     : BSD-style
 # Maintainer  : florbitous@gmail.com
 
@@ -10,6 +10,7 @@ all configure clean install:
 	$(MAKE) $@ --directory=compiler
 	$(MAKE) $@ --directory=readpyc
 	$(MAKE) $@ --directory=interpreter
+	$(MAKE) $@ --directory=main
 
 .PHONY: test
 test:

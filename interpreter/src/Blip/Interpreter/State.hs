@@ -2,7 +2,7 @@
 -----------------------------------------------------------------------------
 -- |
 -- Module      : State 
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module State 
+module Blip.Interpreter.State 
    ( runEvalMonad
    , initState
    , allocateHeapObject
@@ -48,10 +48,10 @@ import qualified Data.Map as Map (insert, lookup, empty)
 import Data.Map (Map)
 import Control.Monad.State.Strict as State hiding (State)
 import Control.Applicative (Applicative (..), (<$>))
-import Types
+import Text.Printf (printf)
+import Blip.Interpreter.Types
    ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
    , EvalState (..), Eval (..) )
-import Text.Printf (printf)
 
 initState =
    EvalState

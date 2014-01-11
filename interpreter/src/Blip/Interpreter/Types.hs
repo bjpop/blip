@@ -2,7 +2,7 @@
 -----------------------------------------------------------------------------
 -- |
 -- Module      : Types
--- Copyright   : (c) 2013 Bernie Pope
+-- Copyright   : (c) 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Types
+module Blip.Interpreter.Types
    ( Eval (..)
    , EvalState (..)
    , Heap
@@ -88,6 +88,7 @@ data HeapObject
    | UnicodeObject { unicodeObject_value :: !String } -- should be decoded into a String
    | TrueObject
    | FalseObject
+     -- XXX components of complex object should be allocated on the heap
    | ComplexObject { complexObject_real :: !Double, complexObject_imaginary :: !Double }
    | LongObject { longObject_value :: !Integer }
      -- XXX list should have an MVector RealWorld, so we can mutate the values.
@@ -106,7 +107,7 @@ data HeapObject
        , frameValueStack :: !ValueStack
        , frameStackPointer :: !Int
        , frameProgramCounter :: !ProgramCounter
-       -- locals, globals, builtins
+       -- locals, globals, builtins, blockStack
        }
 
 instance Show HeapObject where

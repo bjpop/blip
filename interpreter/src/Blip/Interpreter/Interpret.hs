@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Interpret (interpretFile) where
+module Blip.Interpreter.Interpret (interpretFile) where
 
 import Data.Fixed (mod')
 import Text.Printf (printf)
@@ -33,17 +33,17 @@ import Data.Int (Int32)
 import Data.Vector as Vector
    ( Vector, fromList, length, (!), replicateM, reverse, empty )
 import Data.Vector.Generic.Mutable as MVector (new)
-import Types 
+import Blip.Interpreter.Types 
    ( Eval (..), EvalState (..) ) 
-import State 
+import Blip.Interpreter.State 
    ( runEvalMonad, getNextObjectID, insertHeap
    , lookupHeap, initState, getProgramCounter, incProgramCounter
    , pushValueStack, popValueStack, popValueStackObject, getValueStack, getGlobal, setGlobal
    , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
    , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame
    , dumpStack ) 
-import Types (ObjectID, Heap, HeapObject (..))
-import Prims (printPrim, addPrimGlobal)
+import Blip.Interpreter.Types (ObjectID, Heap, HeapObject (..))
+import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
 
 interpretFile :: FilePath -> IO ()
 interpretFile pycFilename = do

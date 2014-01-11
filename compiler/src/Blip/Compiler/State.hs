@@ -2,8 +2,8 @@
 
 -----------------------------------------------------------------------------
 -- |
--- Module      : State
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.State
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -15,7 +15,7 @@
 -- of code.
 --
 -----------------------------------------------------------------------------
-module State
+module Blip.Compiler.State
    ( setBlockState, getBlockState, initBlockState, initState, modifyBlockState
    , emitCode, emitCodeNoArg, emitCodeArg, compileConstant
    , getFileName, newLabel, compileConstantEmit, labelNextInstruction
@@ -28,8 +28,8 @@ module State
    , setFirstLineNumber )
    where
 
-import Monad (Compile (..))
-import Types
+import Blip.Compiler.Monad (Compile (..))
+import Blip.Compiler.Types
    ( Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable, VarSet, NestedScope (..)
@@ -38,13 +38,13 @@ import Types
 import Blip.Bytecode
    (Bytecode (..), Opcode (..), BytecodeArg (..), bytecodeSize)
 import Blip.Marshal (PyObject (..), CodeObjectFlagMask, co_varargs, co_varkeywords)
+import Blip.Compiler.Utils (identsFromParameters, countPosParameters, getSpanLine)
 import Data.Word (Word16, Word32)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad.State.Strict as State hiding (State)
 import Data.List (sort)
 import Data.Bits ((.|.))
-import Utils (identsFromParameters, countPosParameters, getSpanLine)
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 
 emptyVarSet :: VarSet

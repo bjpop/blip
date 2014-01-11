@@ -1,7 +1,7 @@
 {-# LANGUAGE RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Desugar 
+-- Module      : Blip.Compiler.Desugar 
 -- Copyright   : (c) 2013 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
@@ -18,10 +18,10 @@
 --
 -----------------------------------------------------------------------------
 
-module Desugar (desugarComprehension, resultName, desugarWith) where
+module Blip.Compiler.Desugar (desugarComprehension, resultName, desugarWith) where
 
 import Prelude hiding (mapM)
-import Utils (mkIdent)
+import Blip.Compiler.Utils (mkIdent)
 import Language.Python.Common.AST as AST
    ( StatementSpan, Statement (..), ExprSpan, Comprehension (..)
    , ComprehensionSpan, CompFor (..), CompForSpan, CompIf (..), CompIfSpan

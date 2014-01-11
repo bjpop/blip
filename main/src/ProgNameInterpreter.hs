@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      : ProgName
+-- Module      : ProgNameInterpreter
 -- Copyright   : (c) 2012, 2013 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module ProgName (progName) where
+module ProgNameInterpreter (progName) where
 
 progName :: String
 progName = "blipi"

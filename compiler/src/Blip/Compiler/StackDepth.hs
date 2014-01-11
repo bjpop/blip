@@ -1,8 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : StackDepth
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.StackDepth
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -15,10 +15,10 @@
 --
 -----------------------------------------------------------------------------
 
-module StackDepth (maxStackDepth) where
+module Blip.Compiler.StackDepth (maxStackDepth) where
  
-import Types (AnnotatedCode (..))
-import Utils (isJumpBytecode, isRelativeJump, isConditionalJump)
+import Blip.Compiler.Types (AnnotatedCode (..))
+import Blip.Compiler.Utils (isJumpBytecode, isRelativeJump, isConditionalJump)
 import Blip.Bytecode (Bytecode (..), BytecodeArg (..), Opcode (..), bytecodeSize)
 import Data.Word (Word32, Word16)
 import Control.Monad.RWS.Strict (RWS, runRWS, ask, local, gets, modify, when)

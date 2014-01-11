@@ -18,13 +18,13 @@ import System.Exit (exitFailure, exitSuccess)
 import Control.Exception (try)
 import Control.Monad (when)
 import System.Console.ParseArgs
-   (Argtype (..), argDataOptional, Arg (..)
+   ( Argtype (..), argDataOptional, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
-import Blip.Version (versionString)
-import Compile (compileFile, writePycFile)
-import ProgName (progName)
+import ProgNameCompiler (progName)
 import Data.Set as Set (Set, empty, singleton, union)
-import Types (Dumpable (..), CompileConfig (..))
+import Blip.Version (versionString)
+import Blip.Compiler.Types (Dumpable (..), CompileConfig (..))
+import Blip.Compiler.Compile (compileFile, writePycFile)
 
 main :: IO ()
 main = do

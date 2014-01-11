@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
 -----------------------------------------------------------------------------
 -- |
--- Module      : Monad
+-- Module      : Blip.Compiler.Monad
 -- Copyright   : (c) 2012, 2013 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
@@ -12,11 +12,10 @@
 --
 -----------------------------------------------------------------------------
 
-module Monad (Compile (..), runCompileMonad)  where
+module Blip.Compiler.Monad (Compile (..), runCompileMonad)  where
 
-import Types (CompileState (..))
+import Blip.Compiler.Types (CompileState (..))
 import Control.Monad.State.Strict as State hiding (State)
--- import Control.Monad.State.Class (MonadState (..))
 import Control.Applicative (Applicative (..))
 
 newtype Compile a

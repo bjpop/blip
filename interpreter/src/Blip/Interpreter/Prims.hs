@@ -2,7 +2,7 @@
 -----------------------------------------------------------------------------
 -- |
 -- Module      : Prims 
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Prims
+module Blip.Interpreter.Prims
    ( addPrimGlobal
    , printPrim
    , returnNone
@@ -23,10 +23,10 @@ import Data.Vector as Vector (mapM, toList)
 import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
 import Text.Printf (printf)
-import Types
+import Blip.Interpreter.Types
    ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
    , EvalState (..), Eval (..), PrimFun )
-import State
+import Blip.Interpreter.State
    ( lookupHeap
    , getNextObjectID
    , insertHeap

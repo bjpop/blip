@@ -1,7 +1,7 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      : Types
--- Copyright   : (c) 2012, 2013 Bernie Pope
+-- Module      : Blip.Compiler.Types
+-- Copyright   : (c) 2012, 2013, 2014 Bernie Pope
 -- License     : BSD-style
 -- Maintainer  : florbitous@gmail.com
 -- Stability   : experimental
@@ -10,7 +10,7 @@
 -- Type definitions which are used in multiple modules.
 --
 -----------------------------------------------------------------------------
-module Types 
+module Blip.Compiler.Types 
    ( Identifier, CompileConfig (..), VarIndex, IndexedVarSet
    , ConstantID, ConstantCache, CompileState (..), BlockState (..)
    , AnnotatedCode (..), LabelMap, Dumpable (..), VarSet

@@ -12,7 +12,7 @@
 --
 -----------------------------------------------------------------------------
 
-module ProgName (progName) where
+module ProgNameCompiler (progName) where
 
 progName :: String
 progName = "blip"
