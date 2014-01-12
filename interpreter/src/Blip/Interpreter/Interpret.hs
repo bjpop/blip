@@ -12,7 +12,8 @@
 --
 -----------------------------------------------------------------------------
 
-module Blip.Interpreter.Interpret (interpretFile) where
+module Blip.Interpreter.Interpret
+   (interpretFile, runTopObjectEval, initGlobals) where
 
 import Data.Fixed (mod')
 import Text.Printf (printf)

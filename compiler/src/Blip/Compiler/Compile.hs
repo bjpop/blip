@@ -42,7 +42,9 @@
 --
 -----------------------------------------------------------------------------
 
-module Blip.Compiler.Compile (compileFile, writePycFile) where
+module Blip.Compiler.Compile
+   (compileFile, compileReplInput, writePycFile)
+   where
 
 import Prelude hiding (mapM)
 import Blip.Compiler.Desugar (desugarComprehension, desugarWith, resultName)
@@ -72,7 +74,7 @@ import Blip.Compiler.Scope (topScope, renderScope)
 import Blip.Marshal as Blip
    ( writePyc, PycFile (..), PyObject (..), co_generator )
 import Blip.Bytecode (Opcode (..), encode)
-import Language.Python.Version3.Parser (parseModule)
+import Language.Python.Version3.Parser (parseModule, parseStmt)
 import Language.Python.Common.AST as AST
    ( Annotated (..), ModuleSpan, Module (..), StatementSpan, Statement (..)
    , ExprSpan, Expr (..), Ident (..), ArgumentSpan, Argument (..)
@@ -101,11 +103,18 @@ import Control.Monad (unless, forM_, when, replicateM_, foldM)
 import Control.Monad.Trans (liftIO)
 import Data.Bits ((.|.), shiftL)
 
--- Compile Python source code to bytecode and write the
--- result out to a .pyc file. The name of the output
--- file is based on the name of the input file. For example
--- the input 'foo.py' will result in an output file called 'foo.pyc'.
+-- Compile the input from the REPL command line to an object.
+compileReplInput :: CompileConfig -> String -> IO PyObject
+compileReplInput config replString = do
+   stmts <- parseStmtAndCheckErrors replString
+   -- pretend that the statements are a module on their own to calculate the variable scope
+   (moduleLocals, nestedScope) <- topScope $ Module stmts 
+   let state = initState ModuleContext moduleLocals
+                  nestedScope config ""
+   compileReplStmts state stmts
 
+-- Compile Python source code to bytecode, returing a representation
+-- of a .pyc file contents.
 compileFile :: CompileConfig -- Configuration options
             -> FilePath      -- The file path of the input Python source
             -> IO PycFile
@@ -116,7 +125,7 @@ compileFile config path = do
    -- modifiedTime <- getModificationTime path
    -- let modSeconds = case modifiedTime of TOD secs _picoSecs -> secs
    let modSeconds = (0 :: Integer)
-   pyModule <- parseAndCheckErrors fileContents path
+   pyModule <- parseFileAndCheckErrors fileContents path
    (moduleLocals, nestedScope) <- topScope pyModule
    -- canonicalPath <- canonicalizePath path 
    canonicalPath <- return path 
@@ -133,9 +142,16 @@ writePycFile pyc path = do
    writePyc pycHandle pyc
    hClose pycHandle
 
--- Parse the Python source into an AST, check for any syntax errors.
-parseAndCheckErrors :: String -> FilePath -> IO ModuleSpan
-parseAndCheckErrors fileContents sourceName =
+-- Parse the Python source from a statement into an AST, check for any syntax errors.
+parseStmtAndCheckErrors :: String -> IO [StatementSpan]
+parseStmtAndCheckErrors stmtString =
+   case parseStmt stmtString "<stdin>" of
+      Left e -> error $ "parse error: " ++ prettyText e
+      Right (stmts, _comments) -> return stmts
+
+-- Parse the Python source from a File into an AST, check for any syntax errors.
+parseFileAndCheckErrors :: String -> FilePath -> IO ModuleSpan
+parseFileAndCheckErrors fileContents sourceName =
    case parseModule fileContents sourceName of
       Left e -> error $ "parse error: " ++ prettyText e
       Right (pyModule, _comments) -> return pyModule
@@ -152,6 +168,10 @@ compileModule state pyFileModifiedTime pyFileSizeBytes mod = do
       , modified_time = pyFileModifiedTime 
       , size = pyFileSizeBytes
       , object = obj }
+
+compileReplStmts :: CompileState -> [StatementSpan] -> IO PyObject
+compileReplStmts state replStatements =
+   compiler (Body replStatements) state
 
 compiler :: Compilable a => a -> CompileState -> IO (CompileResult a)
 compiler = runCompileMonad . compile

@@ -14,6 +14,7 @@
 
 module Main where
 
+import Repl (repl)
 import System.Exit (exitSuccess)
 import Control.Monad (when)
 import System.Console.ParseArgs
@@ -25,6 +26,7 @@ import Blip.Interpreter.Interpret (interpretFile)
 
 main :: IO ()
 main = do
+{-
    let argDescriptions = [version, help, inputFile]
    args <- parseArgsIO ArgsComplete argDescriptions
    when (gotArg args Help) $ do
@@ -33,7 +35,9 @@ main = do
    when (gotArg args Version) $ do
       putStrLn $ progName ++ " version " ++ versionString
       exitSuccess
-   interpretFile $ getRequiredArg args InputFile
+   -- interpretFile $ getRequiredArg args InputFile
+-}
+   repl
 
 data ArgIndex
    = Help
