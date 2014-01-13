@@ -7,8 +7,8 @@
 -- Stability   : experimental
 -- Portability : ghc
 --
--- The Main module of Blip. Contains the entry point of the compiler, and
--- handles command line argument parsing.
+-- The Main module of Blip. Contains the entry point of the compiler and
+-- the interpreter and handles command line argument parsing.
 --
 -----------------------------------------------------------------------------
 
@@ -16,37 +16,54 @@ module Main where
 
 import System.Exit (exitFailure, exitSuccess)
 import Control.Exception (try)
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import System.Console.ParseArgs
    ( Argtype (..), argDataOptional, Arg (..)
    , gotArg, getArg, parseArgsIO, ArgsComplete (..), Args(..))
-import ProgNameCompiler (progName)
+import ProgName (progName)
 import Data.Set as Set (Set, empty, singleton, union)
+import System.FilePath (splitExtension)
 import Blip.Version (versionString)
 import Blip.Compiler.Types (Dumpable (..), CompileConfig (..))
 import Blip.Compiler.Compile (compileFile, writePycFile)
+import Blip.Interpreter.Interpret (interpretFile)   
+import Repl (repl)
+
+argDescriptions :: [Arg ArgIndex]
+argDescriptions =
+   [ version, help, magicNumberArg
+   , dumpScopeArg, dumpASTArg, compileOnly, inputFile
+   ]
 
 main :: IO ()
 main = do
-   let argDescriptions = [version, help, magicNumberArg, dumpScopeArg, dumpASTArg]
-   args <- parseArgsIO (ArgsTrailing "PYTHON_FILES") argDescriptions
+   args <- parseArgsIO ArgsComplete argDescriptions
    when (gotArg args Help) $ do
       putStrLn $ argsUsage args
       exitSuccess
    when (gotArg args Version) $ do
       putStrLn $ progName ++ " version " ++ versionString
       exitSuccess
-   let pythonFiles = argsRest args
-   when (null pythonFiles) $ do
-      putStrLn $ progName ++ ": no Python input files specified"
-      putStrLn $ argsUsage args
-      exitFailure 
-   let magicNumber = getMagicNumber args
-       dumps = getDumps args
-       config = initCompileConfig 
-                   { compileConfig_magic = fromIntegral magicNumber
-                   , compileConfig_dumps = dumps }
-   mapM_ (compileAndWritePyc config) pythonFiles
+   when (gotArg args InputFile) $ do
+      case getArg args InputFile of
+          Nothing -> repl 
+          Just filename -> do
+             let (prefix, suffix) = splitExtension filename
+             if suffix == ".pyc"
+                then do
+                   interpretFile filename
+                   exitSuccess
+                else do
+                   let magicNumber = getMagicNumber args
+                       dumps = getDumps args
+                       config = initCompileConfig 
+                                { compileConfig_magic = fromIntegral magicNumber
+                                , compileConfig_dumps = dumps }
+                   compileAndWritePyc config filename
+                   unless (gotArg args CompileOnly) $ 
+                       interpretFile $ prefix ++ ".pyc"
+                   exitSuccess
+   repl
 
 compileAndWritePyc :: CompileConfig -> FilePath -> IO ()
 compileAndWritePyc config path =
@@ -69,6 +86,7 @@ data ArgIndex
    | Version
    | MagicNumber
    | Dump Dumpable
+   | CompileOnly
    deriving (Eq, Ord, Show)
 
 help :: Arg ArgIndex
@@ -81,6 +99,16 @@ help =
    , argDesc = "Display a help message."
    }
 
+compileOnly :: Arg ArgIndex
+compileOnly =
+   Arg
+   { argIndex = CompileOnly 
+   , argAbbr = Just 'c'
+   , argName = Just "compile" 
+   , argData = Nothing
+   , argDesc = "Compile .py to .pyc but do not run the program."
+   }
+
 inputFile :: Arg ArgIndex
 inputFile =
    Arg
@@ -88,7 +116,7 @@ inputFile =
    , argAbbr = Nothing
    , argName = Nothing
    , argData = argDataOptional "input file" ArgtypeString
-   , argDesc = "Name of the input Python file."
+   , argDesc = "Name of the input Python file, either .py or .pyc"
    }
 
 version :: Arg ArgIndex

@@ -15,6 +15,8 @@
 module Blip.Interpreter.Prims
    ( addPrimGlobal
    , printPrim
+   , printIfNotNone
+   , heapObjectToString
    , returnNone
    )  where
 
@@ -40,34 +42,43 @@ addPrimGlobal arity name fun = do
    let primObject = PrimitiveObject arity name fun
    objectID <- allocateHeapObject primObject 
    setGlobal name objectID 
+
+printIfNotNone :: ObjectID -> Eval () 
+printIfNotNone x = do
+   object <- lookupHeap x
+   case object of
+      NoneObject -> return ()
+      _other -> do
+         objectString <- heapObjectToString object
+         liftIO $ putStrLn objectString
    
 printPrim :: PrimFun
 printPrim [x] = do
    object <- lookupHeap x
-   objectString <- toString object
+   objectString <- heapObjectToString object
    liftIO $ putStrLn objectString
    returnNone
-   where
-   toString :: HeapObject -> Eval String
-   toString (CodeObject {}) = return $ printf "<code %d>" x
-   toString (StringObject {..}) = return $ BS.unpack stringObject_string
-   toString (TupleObject {..}) = return $ "<tuple>"
-   toString (IntObject {..}) = return $ show initObject_value
-   toString (FloatObject {..}) = return $ show floatObject_value 
-   toString NoneObject = return "None"
-   toString EllipsisObject = return "..."
-   toString (UnicodeObject {..}) = return $ unicodeObject_value
-   toString TrueObject = return $ "True"
-   toString FalseObject = return $ "False"
-   toString (ComplexObject {..}) =
-      return $ printf "%f + %fj" complexObject_real complexObject_imaginary
-   toString (LongObject {..}) =
-      return $ show longObject_value
-   toString (PrimitiveObject {..}) =
-      return $ printf "<prim %s>" primitiveName
-   toString (ListObject {..}) = do
-      elementObjects <- Vector.mapM lookupHeap listObject_elements
-      elementStrings <- Vector.mapM toString elementObjects
-      let elementStringsList = Vector.toList elementStrings
-      return $ "[" ++ concat (intersperse ", " elementStringsList) ++ "]"
 printPrim _other = error "print called with wrong number of arguments"
+
+heapObjectToString :: HeapObject -> Eval String
+heapObjectToString (CodeObject {}) = return $ printf "<code>"
+heapObjectToString (StringObject {..}) = return $ BS.unpack stringObject_string
+heapObjectToString (TupleObject {..}) = return $ "<tuple>"
+heapObjectToString (IntObject {..}) = return $ show initObject_value
+heapObjectToString (FloatObject {..}) = return $ show floatObject_value 
+heapObjectToString NoneObject = return "None"
+heapObjectToString EllipsisObject = return "..."
+heapObjectToString (UnicodeObject {..}) = return $ unicodeObject_value
+heapObjectToString TrueObject = return $ "True"
+heapObjectToString FalseObject = return $ "False"
+heapObjectToString (ComplexObject {..}) =
+   return $ printf "%f + %fj" complexObject_real complexObject_imaginary
+heapObjectToString (LongObject {..}) =
+   return $ show longObject_value
+heapObjectToString (PrimitiveObject {..}) =
+   return $ printf "<prim %s>" primitiveName
+heapObjectToString (ListObject {..}) = do
+   elementObjects <- Vector.mapM lookupHeap listObject_elements
+   elementStrings <- Vector.mapM heapObjectToString elementObjects
+   let elementStringsList = Vector.toList elementStrings
+   return $ "[" ++ concat (intersperse ", " elementStringsList) ++ "]"

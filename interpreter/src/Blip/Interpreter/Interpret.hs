@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.Interpret
-   (interpretFile, runTopObjectEval, initGlobals) where
+   (interpretFile, interpretObject, initGlobals) where
 
 import Data.Fixed (mod')
 import Text.Printf (printf)
@@ -46,24 +46,22 @@ import Blip.Interpreter.State
 import Blip.Interpreter.Types (ObjectID, Heap, HeapObject (..))
 import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
 
-interpretFile :: FilePath -> IO ()
-interpretFile pycFilename = do
-   withFile pycFilename ReadMode $ \handle -> do
-      pycFile <- readPyc handle 
-      runTopObject $ object pycFile
-
-runTopObject :: PyObject -> IO ()
-runTopObject object =
-   runEvalMonad
-      (initGlobals >> runTopObjectEval object)
-      initState 
-
 initGlobals :: Eval ()
 initGlobals = do
    addPrimGlobal 1 "print" printPrim
 
-runTopObjectEval :: PyObject -> Eval ()
-runTopObjectEval object = do
+interpretFile :: FilePath -> IO ()
+interpretFile pycFilename = do
+   withFile pycFilename ReadMode $ \handle -> do
+      pycFile <- readPyc handle 
+      runEvalMonad
+         (do initGlobals
+             interpretObject $ object pycFile
+             return ())
+         initState 
+
+interpretObject :: PyObject -> Eval ObjectID
+interpretObject object = do
    objectID <- loadIntoHeap object
    heapObject <- lookupHeap objectID
    let stackSize = getCodeStackSize heapObject 
@@ -76,14 +74,10 @@ runTopObjectEval object = do
           , frameProgramCounter = 0
           }
    pushFrame newFrame
-   evalTopObject objectID
-
-evalTopObject :: ObjectID -> Eval ()
-evalTopObject objectID = do
    heapObject <- lookupHeap objectID
    case heapObject of
-      CodeObject {} -> evalCodeObject heapObject >> return ()
-      _other -> return ()
+      CodeObject {} -> evalCodeObject heapObject
+      _other -> error "evalTopObject: not a code object"
 
 evalCodeObject :: HeapObject -> Eval ObjectID
 evalCodeObject object@(CodeObject {..}) = do

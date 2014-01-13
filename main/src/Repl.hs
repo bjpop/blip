@@ -32,9 +32,11 @@ import Language.Python.Common.PrettyParseError ()
 import Blip.Version (versionString)
 import Blip.Compiler.Compile (compileReplInput)
 import Blip.Compiler.Types (CompileConfig (..))
-import Blip.Interpreter.Interpret as Interpreter (runTopObjectEval, initGlobals)
+import Blip.Interpreter.Interpret as Interpreter
+   (interpretObject, initGlobals)
 import Blip.Interpreter.Types as Interpreter (Eval)
 import Blip.Interpreter.State as Interpreter (runEvalMonad, initState)
+import Blip.Interpreter.Prims (printIfNotNone)
 
 repl :: IO ()
 repl = do
@@ -46,7 +48,8 @@ repl = do
 
 greeting :: Repl ()
 greeting = 
-   liftIO $ putStrLn $ "Berp version " ++ versionString ++ ", type control-d to exit."
+   liftIO $ putStrLn $
+      "Berp version " ++ versionString ++ ", type control-d to exit."
 
 replLoop :: Repl ()
 replLoop = do
@@ -54,7 +57,6 @@ replLoop = do
    case maybeInput of
       Nothing -> return ()
       Just input -> evalInput input >> replLoop
-
 
 initCompileConfig :: CompileConfig
 initCompileConfig =
@@ -65,7 +67,7 @@ evalInput :: String -> Repl ()
 evalInput input =
    when (not $ null input) $ do
       pyObject <- liftIO $ compileReplInput initCompileConfig (input ++ "\n")
-      lift $ runTopObjectEval pyObject
+      lift (interpretObject pyObject >>= printIfNotNone)
 
 type Repl a = StateT ReplState Interpreter.Eval a
 

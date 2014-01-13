@@ -107,11 +107,35 @@ import Data.Bits ((.|.), shiftL)
 compileReplInput :: CompileConfig -> String -> IO PyObject
 compileReplInput config replString = do
    stmts <- parseStmtAndCheckErrors replString
+   let printWrapped = wrapWithPrint stmts
    -- pretend that the statements are a module on their own to calculate the variable scope
-   (moduleLocals, nestedScope) <- topScope $ Module stmts 
+   (moduleLocals, nestedScope) <- topScope $ Module printWrapped
    let state = initState ModuleContext moduleLocals
                   nestedScope config ""
-   compileReplStmts state stmts
+   compileReplStmts state printWrapped
+
+-- Support for REPL printing of expressions.
+-- If the statement entered at the REPL is an expression, then
+-- we try to print it out.
+-- We transform an expression E into:
+--    _ = E
+--    print(_)
+--
+-- XXX if the result of E is None then we should not print it out,
+-- to be consistent with CPython.
+wrapWithPrint :: [StatementSpan] -> [StatementSpan]
+wrapWithPrint [StmtExpr {..}] = 
+   [assignStmt, printStmt]
+   where
+   assignStmt = Assign { assign_to = [underscoreVar], assign_expr = stmt_expr, stmt_annot = SpanEmpty }
+   underscoreIdent = Ident { ident_string = "_", ident_annot = SpanEmpty }
+   underscoreVar = Var { var_ident = underscoreIdent, expr_annot = SpanEmpty }
+   printIdent = Ident { ident_string = "print", ident_annot = SpanEmpty }
+   printVar = Var { var_ident = printIdent, expr_annot = SpanEmpty }
+   printArg = ArgExpr { arg_expr = underscoreVar, arg_annot = SpanEmpty }
+   printExpr = Call { call_fun = printVar, call_args = [printArg], expr_annot = SpanEmpty }
+   printStmt = StmtExpr { stmt_expr = printExpr, stmt_annot = SpanEmpty }
+wrapWithPrint other = other
 
 -- Compile Python source code to bytecode, returing a representation
 -- of a .pyc file contents.
