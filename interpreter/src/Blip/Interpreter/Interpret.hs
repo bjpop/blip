@@ -30,7 +30,6 @@ import qualified Data.Map as Map (insert, lookup)
 import Data.Map (Map)
 import qualified Data.ByteString.Lazy as B (ByteString, index, length)
 import Data.Word (Word8, Word16, Word32)
-import Data.Int (Int32)
 import Data.Vector as Vector
    ( Vector, fromList, length, (!), replicateM, reverse, empty )
 import Data.Vector.Generic.Mutable as MVector (new)
@@ -248,7 +247,7 @@ callFunction other args = do
    -- dumpStack
    error $ "call to unsupported object " ++ show other
 
-unaryOp :: (Int32 -> Int32) -> (Double -> Double) -> Eval()
+unaryOp :: (Integer -> Integer) -> (Double -> Double) -> Eval()
 unaryOp intOp floatOp = do
    object <- popValueStackObject
    case object of
@@ -262,11 +261,11 @@ unaryOp intOp floatOp = do
 
 data BinOp =
    BinOp
-   { binOpIntInt :: Int32 -> Int32 -> HeapObject 
+   { binOpIntInt :: Integer -> Integer -> HeapObject 
    , binOpFloatFloat :: Double -> Double -> HeapObject
    }
 
-binOpCompare :: (Int32 -> Int32 -> Bool) -> (Double -> Double -> Bool) -> Eval ()
+binOpCompare :: (Integer -> Integer -> Bool) -> (Double -> Double -> Bool) -> Eval ()
 binOpCompare intCompare floatCompare =
    binOp $ BinOp 
       (\x y -> if intCompare y x then TrueObject else FalseObject)

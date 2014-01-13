@@ -81,7 +81,7 @@ data HeapObject
         }
    | StringObject { stringObject_string :: !B.ByteString }
    | TupleObject { tupleObject_elements :: !(Vector ObjectID) }
-   | IntObject { initObject_value :: !Int32 }  
+   | IntObject { initObject_value :: !Integer }  
    | FloatObject { floatObject_value :: !Double }
    | NoneObject
    | EllipsisObject
