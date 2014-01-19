@@ -24,7 +24,7 @@ import           Data.Primitive.Types     (Addr (..))
 import           GHC.Exts
 import           GHC.Word
 import           Prelude                  hiding (length)
-import           Control.Monad.Primitive (RealWorld)
+-- import           Control.Monad.Primitive (RealWorld)
 ------------------------------------------------------------------------------
 
 

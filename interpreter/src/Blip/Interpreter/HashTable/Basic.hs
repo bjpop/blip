@@ -96,8 +96,6 @@ module Blip.Interpreter.HashTable.Basic
 import           Control.Exception                 (assert)
 import           Control.Monad                     hiding (foldM, mapM_)
 import           Data.Bits
-import           Data.Hashable                     (Hashable)
-import qualified Data.Hashable                     as H
 import           Data.Maybe
 import           Data.Monoid
 import           Data.IORef
@@ -469,7 +467,7 @@ instance Monoid Slot where
 ------------------------------------------------------------------------------
 -- Returns the slot in the array where it would be safe to write the given key.
 delete' :: HashTable_ -> Bool -> ObjectID -> Int -> Eval Int
-delete' (HashTable sz loadRef delRef hashes keys values hashFun compareFun) clearOut k h = do
+delete' (HashTable sz loadRef delRef hashes keys values _hashFun compareFun) clearOut k h = do
     liftIO $ debug $ "delete': h=" ++ show h ++ " he=" ++ show he
                ++ " sz=" ++ show sz ++ " b0=" ++ show b0
     pair@(found, slot) <- go mempty b0 False

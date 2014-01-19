@@ -26,16 +26,9 @@ import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
 import Text.Printf (printf)
 import Blip.Interpreter.Types
-   ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
-   , EvalState (..), Eval (..), PrimFun )
+   ( ObjectID, HeapObject (..), Eval (..), PrimFun )
 import Blip.Interpreter.State
-   ( lookupHeap
-   , getNextObjectID
-   , insertHeap
-   , setGlobal
-   , returnNone
-   , allocateHeapObject
-   )
+   ( lookupHeap, setGlobal, returnNone,  allocateHeapObject )
 import Blip.Interpreter.HashTable.Basic as HT (foldM)
 
 addPrimGlobal :: Int -> String -> PrimFun -> Eval ()
@@ -96,3 +89,4 @@ heapObjectToString (DictObject {..}) = do
        str1 <- heapObjectToString object1
        str2 <- heapObjectToString object2
        return ((str1 ++ ": " ++ str2) : strs)
+heapObjectToString (FunctionObject {}) = return "<function>"

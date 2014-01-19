@@ -14,7 +14,7 @@
 
 module Main where
 
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (exitSuccess)
 import Control.Exception (try)
 import Control.Monad (when, unless)
 import System.Console.ParseArgs

@@ -41,18 +41,18 @@ module Blip.Interpreter.State
    , dumpStack
    )  where
 
+import Control.Applicative ((<$>))
 import Data.Word (Word16)
 import Data.Vector as Vector (length, (!))
 import Data.Vector.Generic.Mutable as MVector (write, read, length)
 import qualified Data.Map as Map (insert, lookup, empty)
-import Data.Map (Map)
 import Control.Monad.State.Strict as State hiding (State)
-import Control.Applicative (Applicative (..), (<$>))
 import Text.Printf (printf)
 import Blip.Interpreter.Types
-   ( ObjectID, Heap, HeapObject (..), ProgramCounter, ValueStack
+   ( ObjectID, HeapObject (..), ProgramCounter, ValueStack
    , EvalState (..), Eval (..) )
 
+initState :: EvalState
 initState =
    EvalState
    { evalState_objectID = 0
@@ -171,11 +171,13 @@ pushFrame frameObject =
 getValueStack :: Eval ValueStack
 getValueStack = frameValueStack <$> getFrame
 
+{-
 mywrite vector position value = do
    let vectorSize = MVector.length vector
    liftIO $ printf "Vector size: %d\n" vectorSize
    liftIO $ printf "position: %d\n" position
    liftIO $ MVector.write vector position value
+-}
 
 -- stack pointer points to the item on top of the stack
 pushValueStack :: ObjectID -> Eval ()
@@ -269,6 +271,6 @@ dumpStack = do
    dumper stack n m
       | n < m = do
            objectID <- liftIO $ MVector.read stack n
-           liftIO $ printf "%d %d\n" n objectID
+           _ <- liftIO $ printf "%d %d\n" n objectID
            dumper stack (n + 1) m
       | otherwise = return () 

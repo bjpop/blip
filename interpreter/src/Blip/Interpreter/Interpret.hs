@@ -15,34 +15,29 @@
 module Blip.Interpreter.Interpret
    (interpretFile, interpretObject, initGlobals) where
 
+import Data.ByteString.Lazy as BS (length, index)
 import Data.Fixed (mod')
 import Text.Printf (printf)
 import Data.List as List (length, reverse)
-import Control.Monad as Monad (replicateM, when)
+import Control.Monad as Monad (replicateM)
 import Control.Monad.Trans (liftIO)
-import Control.Applicative ((<$>))
 import System.IO (withFile, IOMode (..))
 import Blip.Marshal (readPyc, PycFile (..), PyObject (..))
 import Blip.Bytecode
-   ( Bytecode (..), Opcode (..), decode, word8ToOpcode, hasArg
-   , word8sToWord16 )
-import qualified Data.Map as Map (insert, lookup)
-import Data.Map (Map)
-import qualified Data.ByteString.Lazy as B (ByteString, index, length)
-import Data.Word (Word8, Word16, Word32)
+   ( Opcode (..), word8ToOpcode, hasArg, word8sToWord16 )
+import qualified Data.Map as Map (lookup)
+import Data.Word (Word16, Word32)
 import Data.Vector as Vector
-   ( Vector, fromList, length, (!), replicateM, reverse, empty, thaw )
-import Data.Vector.Generic.Mutable as MVector (new, read)
+   ( fromList, replicateM, reverse, thaw )
+import Data.Vector.Generic.Mutable as MVector (new, read, write)
 import Blip.Interpreter.Types 
-   ( Eval (..), EvalState (..) ) 
+   ( Eval (..) )
 import Blip.Interpreter.State 
-   ( runEvalMonad, getNextObjectID, insertHeap
-   , lookupHeap, initState, getProgramCounter, incProgramCounter
-   , pushValueStack, popValueStack, popValueStackObject, getValueStack, getGlobal, setGlobal
+   ( runEvalMonad,lookupHeap, initState, getProgramCounter, incProgramCounter
+   , pushValueStack, popValueStack, popValueStackObject, getGlobal, setGlobal
    , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
-   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame
-   , dumpStack ) 
-import Blip.Interpreter.Types (ObjectID, Heap, HeapObject (..))
+   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
+import Blip.Interpreter.Types (ObjectID, HeapObject (..))
 import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
 
@@ -56,7 +51,7 @@ interpretFile pycFilename = do
       pycFile <- readPyc handle 
       runEvalMonad
          (do initGlobals
-             interpretObject $ object pycFile
+             _ <- interpretObject $ object pycFile
              return ())
          initState 
 
@@ -82,26 +77,26 @@ interpretObject object = do
 evalCodeObject :: HeapObject -> Eval ObjectID
 evalCodeObject object@(CodeObject {..}) = do
    pc <- getProgramCounter
-   stack <- getValueStack
+   -- stack <- getValueStack
    -- liftIO $ printf "Program counter: %d\n" pc
    bytecodeObject <- lookupHeap codeObject_code
    let code = 
           case bytecodeObject of
              StringObject {..} -> stringObject_string
              _other -> error "Bytecode not a string"
-   let numInstructions = B.length code 
+   let numInstructions = BS.length code 
    -- check the program counter is in valid range
    if pc < 0 || pc >= numInstructions
       then error $ printf "Bad program counter %d" pc
       else do
-         let nextOpCodeWord8 = B.index code pc
+         let nextOpCodeWord8 = BS.index code pc
          case Map.lookup nextOpCodeWord8 word8ToOpcode of
             Nothing -> error ("bad op code: " ++ show nextOpCodeWord8)
             Just opCode -> do
                if hasArg opCode
                   then do
-                     let arg1 = B.index code (pc + 1)
-                         arg2 = B.index code (pc + 2)
+                     let arg1 = BS.index code (pc + 1)
+                         arg2 = BS.index code (pc + 2)
                          argWord16 = word8sToWord16 arg1 arg2
                      -- liftIO $ printf "%s %d\n" (show opCode) argWord16
                      incProgramCounter 3
@@ -122,7 +117,7 @@ evalOpCode codeObject opcode arg =
 -- Some opcodes don't use the arg, but we pass it anyway (a dummy arg) to simplify
 -- the program
 evalOneOpCode :: HeapObject -> Opcode -> Word16 -> Eval ()
-evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
+evalOneOpCode (CodeObject {..}) opcode arg =
    case opcode of
       POP_TOP -> popValueStack >> return () 
       ROT_TWO -> do
@@ -212,6 +207,7 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
             7 -> return () -- not in
             8 -> return () -- is
             9 -> return () -- is not
+            _other -> error $ "comparison operator not supported: " ++ show arg
       MAKE_FUNCTION -> do
          functionNameID <- popValueStack
          codeObjectID <- popValueStack
@@ -233,19 +229,21 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          result <- getItem container indexID
          pushValueStack result 
       STORE_SUBSCR -> do
-         valueID <- popValueStack
-         container <- popValueStackObject
          indexID <- popValueStack
+         container <- popValueStackObject
+         valueID <- popValueStack
          setItem container indexID valueID 
       otherOpCode -> error $ "unsupported opcode: " ++ show otherOpCode
+evalOneOpCode otherObject _opcode _arg =
+    error $ "evalOneOpCode called on non code object: " ++ show otherObject
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
-callFunction (PrimitiveObject arity name fun) args
+callFunction (PrimitiveObject arity _name fun) args
    | arity == List.length args = fun args
    | otherwise =
         error (printf "primitve of arity %d applied to %d arguments"
                arity (List.length args))
-callFunction (FunctionObject nameObjectID codeObjectID) args = do
+callFunction (FunctionObject _nameObjectID codeObjectID) args = do
    codeObject <- lookupHeap codeObjectID
    let stackSize = getCodeStackSize codeObject + (fromIntegral $ List.length args)
    valueStack <- liftIO $ MVector.new $ fromIntegral stackSize
@@ -260,10 +258,10 @@ callFunction (FunctionObject nameObjectID codeObjectID) args = do
    mapM_ pushValueStack args
    codeObject <- lookupHeap codeObjectID
    resultObjectID <- evalCodeObject codeObject
-   evalCodeObject codeObject
+   _ <- evalCodeObject codeObject
    popFrame
    pushValueStack resultObjectID
-callFunction other args = do
+callFunction other _args = do
    error $ "call to unsupported object " ++ show other
 
 unaryOp :: (Integer -> Integer) -> (Double -> Double) -> Eval()
@@ -425,9 +423,11 @@ getCodeStackSize :: HeapObject -> Word32
 getCodeStackSize (CodeObject {..}) = codeObject_stacksize
 getCodeStackSize other = error $ "attempt to get stack size from non-code object: " ++ show other 
 
+-- XXX fixme
 hashObject :: ObjectID -> Eval Int
-hashObject objectID = return 12
+hashObject _objectID = return 12
 
+-- XXX fixme
 eqObject :: ObjectID -> ObjectID -> Eval Bool
 eqObject objectID1 objectID2 = do
    object1 <- lookupHeap objectID1
@@ -460,6 +460,8 @@ getItem container indexID =
              IntObject indexVal -> do
                 let indexInt = fromIntegral indexVal
                 liftIO $ MVector.read listObject_elements indexInt
+             _other -> error $ "list indexed with non integer"
+      _otherObject -> error $ "getItem not supported on: " ++ show container
 
 setItem :: HeapObject -> ObjectID -> ObjectID -> Eval ()
 setItem container indexID valueID =
@@ -467,11 +469,11 @@ setItem container indexID valueID =
       (DictObject {..}) ->
          HT.insert dictHashTable indexID valueID
       -- XXX should check if index is in bounds
-{-
       ListObject {..} -> do
          indexObject <- lookupHeap indexID
          case indexObject of
              IntObject indexVal -> do
                 let indexInt = fromIntegral indexVal
-                return $ listObject_elements ! indexInt
--}
+                liftIO $ MVector.write listObject_elements indexInt valueID
+             _other -> error $ "list indexed with non integer"
+      _otherObject -> error $ "setItem not supported on: " ++ show container
