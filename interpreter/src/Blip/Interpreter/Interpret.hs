@@ -31,8 +31,8 @@ import Data.Map (Map)
 import qualified Data.ByteString.Lazy as B (ByteString, index, length)
 import Data.Word (Word8, Word16, Word32)
 import Data.Vector as Vector
-   ( Vector, fromList, length, (!), replicateM, reverse, empty )
-import Data.Vector.Generic.Mutable as MVector (new)
+   ( Vector, fromList, length, (!), replicateM, reverse, empty, thaw )
+import Data.Vector.Generic.Mutable as MVector (new, read)
 import Blip.Interpreter.Types 
    ( Eval (..), EvalState (..) ) 
 import Blip.Interpreter.State 
@@ -44,6 +44,7 @@ import Blip.Interpreter.State
    , dumpStack ) 
 import Blip.Interpreter.Types (ObjectID, Heap, HeapObject (..))
 import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
+import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
 
 initGlobals :: Eval ()
 initGlobals = do
@@ -173,14 +174,14 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
       BUILD_LIST -> do
          elementIDs <- Vector.replicateM (fromIntegral arg) popValueStack
          -- arguments are popped off the stack in reverse order
-         allocateHeapObjectPush $ ListObject $ Vector.reverse elementIDs
+         mvector <- liftIO $ Vector.thaw $ Vector.reverse elementIDs 
+         allocateHeapObjectPush $ ListObject $ mvector
       STORE_NAME -> do
          nameString <- lookupName codeObject_names arg
          objectID <- popValueStack
          setGlobal nameString objectID
       LOAD_CONST -> lookupConst codeObject_consts arg >>= pushValueStack
       CALL_FUNCTION -> do
-         -- dumpStack
          functionArgs <- Monad.replicateM (fromIntegral arg) popValueStack
          functionObjectID <- popValueStack
          functionObject <- lookupHeap functionObjectID
@@ -217,6 +218,25 @@ evalOneOpCode codeObject@(CodeObject {..}) opcode arg =
          allocateHeapObjectPush $ FunctionObject functionNameID codeObjectID
       LOAD_FAST ->
          peekValueStackFromBottom (fromIntegral arg) >>= pushValueStack 
+      BUILD_MAP -> do
+         hashTable <- liftIO $ HT.newSized (fromIntegral arg) hashObject eqObject 
+         allocateHeapObjectPush $ DictObject hashTable
+      STORE_MAP -> do
+         keyID <- popValueStack
+         valID <- popValueStack
+         dictID <- peekValueStackFromTop 0 
+         dictObject <- lookupHeap dictID
+         storeDict dictObject keyID valID
+      BINARY_SUBSCR -> do
+         indexID <- popValueStack
+         container <- popValueStackObject
+         result <- getItem container indexID
+         pushValueStack result 
+      STORE_SUBSCR -> do
+         valueID <- popValueStack
+         container <- popValueStackObject
+         indexID <- popValueStack
+         setItem container indexID valueID 
       otherOpCode -> error $ "unsupported opcode: " ++ show otherOpCode
 
 callFunction :: HeapObject -> [ObjectID] -> Eval ()
@@ -244,7 +264,6 @@ callFunction (FunctionObject nameObjectID codeObjectID) args = do
    popFrame
    pushValueStack resultObjectID
 callFunction other args = do
-   -- dumpStack
    error $ "call to unsupported object " ++ show other
 
 unaryOp :: (Integer -> Integer) -> (Double -> Double) -> Eval()
@@ -405,3 +424,54 @@ atomicPyObjectToHeapObject other
 getCodeStackSize :: HeapObject -> Word32
 getCodeStackSize (CodeObject {..}) = codeObject_stacksize
 getCodeStackSize other = error $ "attempt to get stack size from non-code object: " ++ show other 
+
+hashObject :: ObjectID -> Eval Int
+hashObject objectID = return 12
+
+eqObject :: ObjectID -> ObjectID -> Eval Bool
+eqObject objectID1 objectID2 = do
+   object1 <- lookupHeap objectID1
+   object2 <- lookupHeap objectID2
+   case (object1, object2) of
+      (IntObject int1, IntObject int2) ->
+          return $ int1 == int2
+      _other -> return False
+
+storeDict :: HeapObject -> ObjectID -> ObjectID -> Eval ()
+storeDict object keyID valID =
+    case object of
+       DictObject {..} -> do
+          HT.insert dictHashTable keyID valID
+       other -> error $ "STORE_MAP on non dict object: " ++ show other
+
+getItem :: HeapObject -> ObjectID -> Eval ObjectID
+getItem container indexID =
+   case container of
+      (DictObject {..}) -> do
+         maybeObjectID <- HT.lookup dictHashTable indexID
+         case maybeObjectID of
+            -- XXX should raise key error exception
+            Nothing -> error $ "Key Error"
+            Just resultID -> return resultID
+      -- XXX should check if index is in bounds
+      ListObject {..} -> do
+         indexObject <- lookupHeap indexID
+         case indexObject of
+             IntObject indexVal -> do
+                let indexInt = fromIntegral indexVal
+                liftIO $ MVector.read listObject_elements indexInt
+
+setItem :: HeapObject -> ObjectID -> ObjectID -> Eval ()
+setItem container indexID valueID =
+   case container of
+      (DictObject {..}) ->
+         HT.insert dictHashTable indexID valueID
+      -- XXX should check if index is in bounds
+{-
+      ListObject {..} -> do
+         indexObject <- lookupHeap indexID
+         case indexObject of
+             IntObject indexVal -> do
+                let indexInt = fromIntegral indexVal
+                return $ listObject_elements ! indexInt
+-}

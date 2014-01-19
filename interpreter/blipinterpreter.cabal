@@ -25,6 +25,11 @@ Library {
       Blip.Interpreter.Types
       Blip.Interpreter.State
       Blip.Interpreter.Prims
+      Blip.Interpreter.HashTable.Array
+      Blip.Interpreter.HashTable.Basic
+      Blip.Interpreter.HashTable.CacheLine
+      Blip.Interpreter.HashTable.IntArray
+      Blip.Interpreter.HashTable.Utils
    build-depends:
       base==4.*,
       bliplib == 0.2.*,
@@ -35,6 +40,7 @@ Library {
       containers==0.5.*,
       bytestring==0.10.*,
       vector==0.10.*,
-      primitive==0.5.*
+      primitive==0.5.*,
+      hashable==1.1.*
    other-modules:
 }

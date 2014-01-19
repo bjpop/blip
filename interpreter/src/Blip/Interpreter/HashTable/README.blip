@@ -1,0 +1,20 @@
+This directory contains a modified version of the hashtables
+library.
+
+See the file LICENSE in this directory for the license of the
+code.
+
+We need a version of the hashtables library which supports
+the following equality test on keys:
+
+   compare :: ObjectID -> ObjectID -> Eval Bool
+
+where each ObjectID points to a Python object on the heap.
+
+However, the original hashtables library only supports
+equality like so:
+
+   compare :: Eq a => a -> a -> Bool
+
+Therefore we need to make a special version of the
+hashtables library which is specialised to the Eval monad.

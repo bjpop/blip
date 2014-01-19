@@ -21,7 +21,7 @@ module Blip.Interpreter.Prims
    )  where
 
 import Data.ByteString.Lazy.Char8 as BS (unpack)
-import Data.Vector as Vector (mapM, toList)
+import Data.Vector as Vector (freeze, mapM, toList)
 import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
 import Text.Printf (printf)
@@ -36,6 +36,7 @@ import Blip.Interpreter.State
    , returnNone
    , allocateHeapObject
    )
+import Blip.Interpreter.HashTable.Basic as HT (foldM)
 
 addPrimGlobal :: Int -> String -> PrimFun -> Eval ()
 addPrimGlobal arity name fun = do
@@ -78,7 +79,20 @@ heapObjectToString (LongObject {..}) =
 heapObjectToString (PrimitiveObject {..}) =
    return $ printf "<prim %s>" primitiveName
 heapObjectToString (ListObject {..}) = do
-   elementObjects <- Vector.mapM lookupHeap listObject_elements
+   vector <- liftIO $ Vector.freeze listObject_elements
+   elementObjects <- Vector.mapM lookupHeap vector 
    elementStrings <- Vector.mapM heapObjectToString elementObjects
    let elementStringsList = Vector.toList elementStrings
    return $ "[" ++ concat (intersperse ", " elementStringsList) ++ "]"
+heapObjectToString (FrameObject {}) = return $ printf "<frame>"
+heapObjectToString (DictObject {..}) = do
+    elementStrings <- HT.foldM prettyKeyVal [] dictHashTable 
+    return $ printf "{%s}" (concat $ intersperse ", " elementStrings)
+    where
+    prettyKeyVal :: [String] -> (ObjectID, ObjectID) -> Eval [String] 
+    prettyKeyVal strs (objectID1, objectID2) = do
+       object1 <- lookupHeap objectID1
+       object2 <- lookupHeap objectID2
+       str1 <- heapObjectToString object1
+       str2 <- heapObjectToString object2
+       return ((str1 ++ ": " ++ str2) : strs)

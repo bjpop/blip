@@ -22,6 +22,8 @@ module Blip.Interpreter.Types
    , ProgramCounter
    , Globals 
    , PrimFun
+   , HashTable (..)
+   , HashTable_ (..)
    )  where
 
 import qualified Data.Map as Map (insert, lookup, empty)
@@ -31,8 +33,34 @@ import Control.Applicative (Applicative (..))
 import qualified Data.ByteString.Lazy as B (ByteString)
 import Data.Word (Word8, Word16, Word32, Word64)
 import Data.Int (Int64, Int32)
-import Data.Vector (MVector, Vector)
+import Data.Vector (Vector)
+import Data.Vector.Mutable (IOVector)
 import Control.Monad.Primitive (RealWorld)
+import Data.IORef (IORef)
+import Blip.Interpreter.HashTable.Array (MutableArray)
+import Blip.Interpreter.HashTable.IntArray (IntArray)
+
+-- We define HashTable here instead of the
+-- Blip.Interpreter.Hashtable.Basic module to avoid
+-- a cyclic dependency between modules
+-- Types <--> Basic.
+newtype HashTable = HT (IORef HashTable_)
+
+data HashTable_ = HashTable
+    { _size    :: {-# UNPACK #-} !Int
+    , _load    :: !IntArray  -- ^ How many entries in the table? Prefer
+                                   -- unboxed vector here to STRef because I
+                                   -- know it will be appropriately strict
+    , _delLoad :: !IntArray  -- ^ How many deleted entries in the table?
+    , _hashes  :: !IntArray
+    , _keys    :: {-# UNPACK #-} !(MutableArray ObjectID)
+    , _values  :: {-# UNPACK #-} !(MutableArray ObjectID)
+    , _hash    :: ObjectID -> Eval Int
+    , _compare :: ObjectID -> ObjectID -> Eval Bool
+    }
+
+instance Show HashTable where
+    show _ = "<HashTable>"
 
 type PrimFun = [ObjectID] -> Eval ()
 
@@ -55,7 +83,7 @@ instance MonadState EvalState Eval where
 type ProgramCounter = Int64
 type ObjectID = Word64
 type Heap = Map ObjectID HeapObject
-type ValueStack = MVector RealWorld ObjectID 
+type ValueStack = IOVector ObjectID 
 
 -- hack to get things working, 
 -- should really be a dictionary object on the heap
@@ -91,8 +119,7 @@ data HeapObject
      -- XXX components of complex object should be allocated on the heap
    | ComplexObject { complexObject_real :: !Double, complexObject_imaginary :: !Double }
    | LongObject { longObject_value :: !Integer }
-     -- XXX list should have an MVector RealWorld, so we can mutate the values.
-   | ListObject { listObject_elements :: !(Vector ObjectID) }
+   | ListObject { listObject_elements :: !(IOVector ObjectID) }
    | PrimitiveObject
        { primitiveArity :: !Int
        , primitiveName :: !String
@@ -109,6 +136,8 @@ data HeapObject
        , frameProgramCounter :: !ProgramCounter
        -- locals, globals, builtins, blockStack
        }
+   | DictObject
+       { dictHashTable :: !HashTable }
 
 instance Show HeapObject where
    show (CodeObject {}) = "code object"
@@ -126,3 +155,5 @@ instance Show HeapObject where
    show (ListObject {}) = "list object"
    show (PrimitiveObject {}) = "primitive object"
    show (FunctionObject {}) = "function object"
+   show (FrameObject {}) = "frame object"
+   show (DictObject {}) = "dict object"
