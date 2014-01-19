@@ -18,7 +18,9 @@ or you can pass it as an argument to blip:
    blip foo.pyc
 
 If you omit the -c argument then blip will compile the Python code
-to bytecode and then immediately execute it.
+to bytecode and then immediately execute it:
+
+   blip foo.py
 
 If you don't provide a Python file as input to blip it will start
 a REPL where you can type in Python statements and have them
