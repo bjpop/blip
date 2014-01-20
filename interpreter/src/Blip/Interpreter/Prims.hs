@@ -13,11 +13,8 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.Prims
-   ( addPrimGlobal
-   , printPrim
-   , printIfNotNone
+   ( printIfNotNone
    , heapObjectToString
-   , returnNone
    )  where
 
 import Data.ByteString.Lazy.Char8 as BS (unpack)
@@ -26,16 +23,10 @@ import Data.List (intersperse)
 import Control.Monad.Trans (liftIO)
 import Text.Printf (printf)
 import Blip.Interpreter.Types
-   ( ObjectID, HeapObject (..), Eval (..), PrimFun )
+   ( ObjectID, HeapObject (..), Eval (..) )
 import Blip.Interpreter.State
-   ( lookupHeap, setGlobal, returnNone,  allocateHeapObject )
+   ( lookupHeap )
 import Blip.Interpreter.HashTable.Basic as HT (foldM)
-
-addPrimGlobal :: Int -> String -> PrimFun -> Eval ()
-addPrimGlobal arity name fun = do
-   let primObject = PrimitiveObject arity name fun
-   objectID <- allocateHeapObject primObject 
-   setGlobal name objectID 
 
 printIfNotNone :: ObjectID -> Eval () 
 printIfNotNone x = do
@@ -46,14 +37,6 @@ printIfNotNone x = do
          objectString <- heapObjectToString object
          liftIO $ putStrLn objectString
    
-printPrim :: PrimFun
-printPrim [x] = do
-   object <- lookupHeap x
-   objectString <- heapObjectToString object
-   liftIO $ putStrLn objectString
-   returnNone
-printPrim _other = error "print called with wrong number of arguments"
-
 heapObjectToString :: HeapObject -> Eval String
 heapObjectToString (CodeObject {}) = return $ printf "<code>"
 heapObjectToString (StringObject {..}) = return $ BS.unpack stringObject_string

@@ -51,11 +51,12 @@ import Text.Printf (printf)
 import Blip.Interpreter.Types
    ( ObjectID, HeapObject (..), ProgramCounter, ValueStack
    , EvalState (..), Eval (..) )
+import Blip.Interpreter.StandardObjectID (firstFreeID, noneObjectID) 
 
 initState :: EvalState
 initState =
    EvalState
-   { evalState_objectID = 0
+   { evalState_objectID = firstFreeID
    , evalState_heap = Map.empty
    , evalState_frameStack = []
    , evalState_globals = Map.empty
@@ -64,13 +65,8 @@ initState =
 runEvalMonad :: Eval a -> EvalState -> IO a
 runEvalMonad (Eval comp) = evalStateT comp
 
--- XXX it would be nice if we could share the None object,
--- rather than allocate a new one each time. But this would
--- require us knowing where it was allocated.
 returnNone :: Eval ()
-returnNone = do
-   objectID <- allocateHeapObject NoneObject
-   pushValueStack objectID
+returnNone = pushValueStack noneObjectID 
 
 allocateHeapObject :: HeapObject -> Eval ObjectID
 allocateHeapObject object = do

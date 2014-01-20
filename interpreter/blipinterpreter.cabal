@@ -30,6 +30,8 @@ Library {
       Blip.Interpreter.HashTable.CacheLine
       Blip.Interpreter.HashTable.IntArray
       Blip.Interpreter.HashTable.Utils
+      Blip.Interpreter.StandardObjectID
+      Blip.Interpreter.Builtins 
    build-depends:
       base==4.*,
       bliplib == 0.2.*,

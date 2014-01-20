@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.Interpret
-   (interpretFile, interpretObject, initGlobals) where
+   (interpretFile, interpretObject) where
 
 import Data.ByteString.Lazy as BS (length, index)
 import Data.Fixed (mod')
@@ -38,19 +38,16 @@ import Blip.Interpreter.State
    , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
    , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
 import Blip.Interpreter.Types (ObjectID, HeapObject (..))
-import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
-
-initGlobals :: Eval ()
-initGlobals = do
-   addPrimGlobal 1 "print" printPrim
+import Blip.Interpreter.Builtins (initBuiltins)
+import Blip.Interpreter.StandardObjectID (noneObjectID)
 
 interpretFile :: FilePath -> IO ()
 interpretFile pycFilename = do
    withFile pycFilename ReadMode $ \handle -> do
       pycFile <- readPyc handle 
       runEvalMonad
-         (do initGlobals
+         (do initBuiltins
              _ <- interpretObject $ object pycFile
              return ())
          initState 
@@ -367,42 +364,41 @@ binOp ops = do
 -- each nested PyObject into its corresponding Object.
 -- Returns the ID of the topmost inserted object
 loadIntoHeap :: PyObject -> Eval ObjectID 
-loadIntoHeap object = do
-   heapObject <- case object of 
-      Code {..} -> do
-         codeID <- loadIntoHeap code
-         constsID <- loadIntoHeap consts
-         namesID <- loadIntoHeap names
-         varnamesID <- loadIntoHeap varnames
-         freevarsID <- loadIntoHeap freevars
-         cellvarsID <- loadIntoHeap cellvars
-         filenameID <- loadIntoHeap filename
-         nameID <- loadIntoHeap name
-         lnotabID <- loadIntoHeap lnotab
-         return $
-            CodeObject
-            { codeObject_argcount = argcount
-            , codeObject_kwonlyargcount = kwonlyargcount
-            , codeObject_nlocals = nlocals
-            , codeObject_stacksize = stacksize
-            , codeObject_flags = flags
-            , codeObject_code = codeID
-            , codeObject_consts = constsID
-            , codeObject_names = namesID
-            , codeObject_varnames = varnamesID
-            , codeObject_freevars = freevarsID
-            , codeObject_cellvars = cellvarsID
-            , codeObject_filename = filenameID
-            , codeObject_name = nameID
-            , codeObject_firstlineno = firstlineno
-            , codeObject_lnotab = lnotabID
-            }
-      Tuple {..} -> do
-         elementIDs <- mapM loadIntoHeap elements 
-         return $ TupleObject $ fromList elementIDs
-      atomicObject ->
-         return $ atomicPyObjectToHeapObject atomicObject
-   allocateHeapObject heapObject
+loadIntoHeap (Code {..}) = do
+   codeID <- loadIntoHeap code
+   constsID <- loadIntoHeap consts
+   namesID <- loadIntoHeap names
+   varnamesID <- loadIntoHeap varnames
+   freevarsID <- loadIntoHeap freevars
+   cellvarsID <- loadIntoHeap cellvars
+   filenameID <- loadIntoHeap filename
+   nameID <- loadIntoHeap name
+   lnotabID <- loadIntoHeap lnotab
+   allocateHeapObject $ 
+      CodeObject
+      { codeObject_argcount = argcount
+      , codeObject_kwonlyargcount = kwonlyargcount
+      , codeObject_nlocals = nlocals
+      , codeObject_stacksize = stacksize
+      , codeObject_flags = flags
+      , codeObject_code = codeID
+      , codeObject_consts = constsID
+      , codeObject_names = namesID
+      , codeObject_varnames = varnamesID
+      , codeObject_freevars = freevarsID
+      , codeObject_cellvars = cellvarsID
+      , codeObject_filename = filenameID
+      , codeObject_name = nameID
+      , codeObject_firstlineno = firstlineno
+      , codeObject_lnotab = lnotabID
+      }
+loadIntoHeap (Tuple {..}) = do
+   elementIDs <- mapM loadIntoHeap elements 
+   allocateHeapObject $ TupleObject $ fromList elementIDs
+-- None is allocated at initialisation time
+loadIntoHeap None = return noneObjectID
+loadIntoHeap atomicObject =
+   allocateHeapObject $ atomicPyObjectToHeapObject atomicObject
 
 atomicPyObjectToHeapObject :: PyObject -> HeapObject
 atomicPyObjectToHeapObject (Long val) = LongObject val
@@ -412,16 +408,17 @@ atomicPyObjectToHeapObject TrueObj = TrueObject
 atomicPyObjectToHeapObject FalseObj = FalseObject
 atomicPyObjectToHeapObject (Unicode val) = UnicodeObject val
 atomicPyObjectToHeapObject Ellipsis = EllipsisObject
-atomicPyObjectToHeapObject None = NoneObject
 atomicPyObjectToHeapObject (Float val) = FloatObject val
 atomicPyObjectToHeapObject (Int val) = IntObject $ fromIntegral val
 atomicPyObjectToHeapObject (String val) = StringObject val
-atomicPyObjectToHeapObject other
-   = error ("atomicPyObjectToHeapObject applied to non-atomic object: " ++ show other)
+atomicPyObjectToHeapObject None = NoneObject
+atomicPyObjectToHeapObject other =
+   error ("atomicPyObjectToHeapObject applied to non-atomic object: " ++ show other)
 
 getCodeStackSize :: HeapObject -> Word32
 getCodeStackSize (CodeObject {..}) = codeObject_stacksize
-getCodeStackSize other = error $ "attempt to get stack size from non-code object: " ++ show other 
+getCodeStackSize other =
+   error $ "attempt to get stack size from non-code object: " ++ show other 
 
 -- XXX fixme
 hashObject :: ObjectID -> Eval Int

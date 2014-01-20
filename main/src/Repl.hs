@@ -30,7 +30,8 @@ import Blip.Version (versionString)
 import Blip.Compiler.Compile (compileReplInput)
 import Blip.Compiler.Types (CompileConfig (..))
 import Blip.Interpreter.Interpret as Interpreter
-   (interpretObject, initGlobals)
+   (interpretObject)
+import Blip.Interpreter.Builtins (initBuiltins)
 import Blip.Interpreter.Types as Interpreter (Eval)
 import Blip.Interpreter.State as Interpreter (runEvalMonad, initState)
 import Blip.Interpreter.Prims (printIfNotNone)
@@ -39,7 +40,7 @@ repl :: IO ()
 repl = do
     hSetBuffering stdout NoBuffering
     runRepl $ do
-       lift Interpreter.initGlobals
+       lift initBuiltins
        greeting
        replLoop
 
