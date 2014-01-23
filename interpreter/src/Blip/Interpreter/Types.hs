@@ -136,6 +136,13 @@ data HeapObject
        }
    | DictObject
        { dictHashTable :: !HashTable }
+   | TypeObject
+       { typeName :: !ObjectID  -- unicode 
+       , typeAttributes :: !ObjectID -- a dictionary
+       -- , typeConstructor :: !ObjectID -- a function
+       -- , typeBases :: !ObjectID -- a tuple       
+       -- , typeMRO :: !ObjectID -- a tuple
+       }
 
 instance Show HeapObject where
    show (CodeObject {}) = "code object"
@@ -155,3 +162,4 @@ instance Show HeapObject where
    show (FunctionObject {}) = "function object"
    show (FrameObject {}) = "frame object"
    show (DictObject {}) = "dict object"
+   show (TypeObject {}) = "type object"

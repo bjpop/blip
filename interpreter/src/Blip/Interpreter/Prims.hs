@@ -62,14 +62,20 @@ heapObjectToString (ListObject {..}) = do
    return $ "[" ++ concat (intersperse ", " elementStringsList) ++ "]"
 heapObjectToString (FrameObject {}) = return $ printf "<frame>"
 heapObjectToString (DictObject {..}) = do
-    elementStrings <- HT.foldM prettyKeyVal [] dictHashTable 
-    return $ printf "{%s}" (concat $ intersperse ", " elementStrings)
-    where
-    prettyKeyVal :: [String] -> (ObjectID, ObjectID) -> Eval [String] 
-    prettyKeyVal strs (objectID1, objectID2) = do
-       object1 <- lookupHeap objectID1
-       object2 <- lookupHeap objectID2
-       str1 <- heapObjectToString object1
-       str2 <- heapObjectToString object2
-       return ((str1 ++ ": " ++ str2) : strs)
+   elementStrings <- HT.foldM prettyKeyVal [] dictHashTable 
+   return $ printf "{%s}" (concat $ intersperse ", " elementStrings)
+   where
+   prettyKeyVal :: [String] -> (ObjectID, ObjectID) -> Eval [String] 
+   prettyKeyVal strs (objectID1, objectID2) = do
+      object1 <- lookupHeap objectID1
+      object2 <- lookupHeap objectID2
+      str1 <- heapObjectToString object1
+      str2 <- heapObjectToString object2
+      return ((str1 ++ ": " ++ str2) : strs)
 heapObjectToString (FunctionObject {}) = return "<function>"
+heapObjectToString (TypeObject {..}) = do
+   nameObject <- lookupHeap typeName
+   case nameObject of
+       UnicodeObject {..} -> 
+          return $ printf "<class '%s'>" unicodeObject_value
+       other -> error $ "type name is not a string: " ++ show other

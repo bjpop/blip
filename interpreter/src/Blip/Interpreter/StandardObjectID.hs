@@ -13,7 +13,10 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.StandardObjectID
-   (noneObjectID, noneTypeID, firstFreeID)
+   ( noneObjectID, noneTypeID, firstFreeID, intTypeID, floatTypeID
+   , objectTypeID, typeTypeID, strTypeID, listTypeID, tupleTypeID 
+   , dictTypeID, funTypeID, boolTypeID, complexTypeID
+   , bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID )
    where
 
 import Blip.Interpreter.Types (ObjectID)
@@ -32,7 +35,11 @@ data StandardObjectID
    | FunctionTypeID
    | BoolTypeID
    | ComplexTypeID
+   | BytesTypeID
+   | EllipsisTypeID
    | CodeTypeID  
+   | PrimTypeID
+   | FrameTypeID
    | FirstFreeID          -- this should always be last in the list
    deriving (Eq, Ord, Show, Enum)
 
@@ -47,3 +54,51 @@ noneObjectID = toObjectID NoneObjectID
 
 noneTypeID :: ObjectID
 noneTypeID = toObjectID NoneTypeID 
+
+intTypeID :: ObjectID
+intTypeID = toObjectID IntTypeID
+
+floatTypeID :: ObjectID
+floatTypeID = toObjectID FloatTypeID
+
+objectTypeID :: ObjectID
+objectTypeID = toObjectID ObjectTypeID
+
+typeTypeID :: ObjectID
+typeTypeID = toObjectID TypeTypeID
+
+strTypeID :: ObjectID 
+strTypeID = toObjectID StrTypeID
+
+listTypeID :: ObjectID
+listTypeID = toObjectID ListTypeID
+
+tupleTypeID :: ObjectID
+tupleTypeID = toObjectID TupleTypeID
+
+dictTypeID :: ObjectID
+dictTypeID = toObjectID DictTypeID
+
+funTypeID :: ObjectID
+funTypeID = toObjectID FunctionTypeID
+
+boolTypeID :: ObjectID
+boolTypeID = toObjectID BoolTypeID
+
+complexTypeID :: ObjectID
+complexTypeID = toObjectID ComplexTypeID
+
+bytesTypeID :: ObjectID
+bytesTypeID = toObjectID BytesTypeID  
+
+ellipsisTypeID :: ObjectID
+ellipsisTypeID = toObjectID EllipsisTypeID
+
+codeTypeID :: ObjectID
+codeTypeID = toObjectID CodeTypeID  
+
+primTypeID :: ObjectID
+primTypeID = toObjectID PrimTypeID  
+
+frameTypeID :: ObjectID
+frameTypeID = toObjectID FrameTypeID  

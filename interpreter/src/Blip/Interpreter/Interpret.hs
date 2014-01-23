@@ -39,7 +39,7 @@ import Blip.Interpreter.State
    , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
 import Blip.Interpreter.Types (ObjectID, HeapObject (..))
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
-import Blip.Interpreter.Builtins (initBuiltins)
+import Blip.Interpreter.Builtins (initBuiltins, hashObject, eqObject)
 import Blip.Interpreter.StandardObjectID (noneObjectID)
 
 interpretFile :: FilePath -> IO ()
@@ -255,7 +255,6 @@ callFunction (FunctionObject _nameObjectID codeObjectID) args = do
    mapM_ pushValueStack args
    codeObject <- lookupHeap codeObjectID
    resultObjectID <- evalCodeObject codeObject
-   _ <- evalCodeObject codeObject
    popFrame
    pushValueStack resultObjectID
 callFunction other _args = do
@@ -419,20 +418,6 @@ getCodeStackSize :: HeapObject -> Word32
 getCodeStackSize (CodeObject {..}) = codeObject_stacksize
 getCodeStackSize other =
    error $ "attempt to get stack size from non-code object: " ++ show other 
-
--- XXX fixme
-hashObject :: ObjectID -> Eval Int
-hashObject _objectID = return 12
-
--- XXX fixme
-eqObject :: ObjectID -> ObjectID -> Eval Bool
-eqObject objectID1 objectID2 = do
-   object1 <- lookupHeap objectID1
-   object2 <- lookupHeap objectID2
-   case (object1, object2) of
-      (IntObject int1, IntObject int2) ->
-          return $ int1 == int2
-      _other -> return False
 
 storeDict :: HeapObject -> ObjectID -> ObjectID -> Eval ()
 storeDict object keyID valID =
