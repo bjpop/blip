@@ -13,19 +13,23 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.Builtins
-   (initBuiltins, hashObject, eqObject, newHashTable, newHashTableSized)
+   (initBuiltins, hashObject, eqObject, newHashTable,
+   newHashTableSized, typeOf)
    where
 
+import Data.Hashable (hash)
+import Data.Char (toUpper)
 import Control.Monad (foldM)
 import Control.Monad.Trans (liftIO)
 import Blip.Interpreter.State
    (insertHeap, allocateHeapObjectPush, allocateHeapObject,
-    setGlobal, lookupHeap, returnNone, pushValueStack)
+    setGlobal, lookupHeap, returnNone, pushValueStack,
+    allocateHeapObjectPush)
 import Blip.Interpreter.StandardObjectID
-   ( noneObjectID, noneTypeID, intTypeID, floatTypeID
-   , objectTypeID, typeTypeID, strTypeID, listTypeID, tupleTypeID
-   , dictTypeID, funTypeID, boolTypeID, complexTypeID, funTypeID
-   , bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID )
+   (noneObjectID, noneTypeID, intTypeID, floatTypeID,
+   objectTypeID, typeTypeID, strTypeID, listTypeID, tupleTypeID,
+   dictTypeID, funTypeID, boolTypeID, complexTypeID, funTypeID,
+   bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID)
 import Blip.Interpreter.Types
    (HeapObject (..), Eval, PrimFun, ObjectID, HashTable)
 import Blip.Interpreter.Prims (heapObjectToString)
@@ -83,28 +87,33 @@ idPrim :: PrimFun
 idPrim [x] = allocateHeapObjectPush $ IntObject $ fromIntegral x
 idPrim _other = error "id called with wrong number of arguments"
 
+typeOf :: HeapObject -> Eval ObjectID
+typeOf object =
+   case object of
+      NoneObject {} -> return noneTypeID
+      IntObject {} -> return intTypeID   
+      FloatObject {} -> return floatTypeID   
+      StringObject {} -> return bytesTypeID   
+      UnicodeObject {} -> return strTypeID
+      TupleObject {} -> return tupleTypeID
+      EllipsisObject {} -> return ellipsisTypeID
+      TrueObject {} -> return boolTypeID
+      FalseObject {} -> return boolTypeID
+      ComplexObject {} -> return complexTypeID
+      ListObject {} -> return listTypeID
+      DictObject {} -> return dictTypeID 
+      TypeObject {} -> return typeTypeID
+      CodeObject {} -> return codeTypeID
+      PrimitiveObject {} -> return primTypeID
+      FrameObject {} -> return frameTypeID
+      FunctionObject {} -> return funTypeID
+      LongObject {} -> return intTypeID
+
 typePrim :: PrimFun
 typePrim [objectID] = do
    object <- lookupHeap objectID
-   case object of
-      NoneObject {} -> pushValueStack noneTypeID
-      IntObject {} -> pushValueStack intTypeID   
-      FloatObject {} -> pushValueStack floatTypeID   
-      StringObject {} -> pushValueStack bytesTypeID   
-      UnicodeObject {} -> pushValueStack strTypeID
-      TupleObject {} -> pushValueStack tupleTypeID
-      EllipsisObject {} -> pushValueStack ellipsisTypeID
-      TrueObject {} -> pushValueStack boolTypeID
-      FalseObject {} -> pushValueStack boolTypeID
-      ComplexObject {} -> pushValueStack complexTypeID
-      ListObject {} -> pushValueStack listTypeID
-      DictObject {} -> pushValueStack dictTypeID 
-      TypeObject {} -> pushValueStack typeTypeID
-      CodeObject {} -> pushValueStack codeTypeID
-      PrimitiveObject {} -> pushValueStack primTypeID
-      FrameObject {} -> pushValueStack frameTypeID
-      FunctionObject {} -> pushValueStack funTypeID
-      LongObject {} -> pushValueStack intTypeID
+   typeID <- typeOf object
+   pushValueStack typeID
 typePrim _other = error "type called with wrong number of arguments"
 
 intType :: Eval ()
@@ -117,7 +126,21 @@ bytesType :: Eval ()
 bytesType = makeType "bytes" bytesTypeID []
 
 strType :: Eval ()
-strType = makeType "str" strTypeID []
+strType =
+   makeType "str" strTypeID strMethods 
+   where
+   strMethods :: [HeapObject]
+   strMethods = [upperMethod]
+   upperMethod :: HeapObject
+   upperMethod = PrimitiveObject 1 "upper" upperPrim
+
+upperPrim :: PrimFun
+upperPrim [objectID] = do
+   object <- lookupHeap objectID
+   case object of
+      UnicodeObject string -> do
+          allocateHeapObjectPush $ UnicodeObject $ map toUpper string
+      _other -> error $ "upper applied to a non string object"
 
 tupleType :: Eval ()
 tupleType = makeType "tuple" tupleTypeID []
@@ -158,11 +181,17 @@ funType = makeType "fun" funTypeID []
 objectType :: Eval ()
 objectType = makeType "object" objectTypeID []
 
--- XXX fixme
 hashObject :: ObjectID -> Eval Int
-hashObject _objectID = return 12
+hashObject objectID = do
+   object <- lookupHeap objectID 
+   case object of
+      IntObject int -> return $ hash int
+      StringObject bs -> return $ hash bs
+      UnicodeObject str -> return $ hash str
+      FloatObject float -> return $ hash float
+      -- XXX should really call the __hash__ method
+      _other -> return $ hash objectID 
 
--- XXX fixme
 eqObject :: ObjectID -> ObjectID -> Eval Bool
 eqObject objectID1 objectID2 = do
    object1 <- lookupHeap objectID1
@@ -170,7 +199,14 @@ eqObject objectID1 objectID2 = do
    case (object1, object2) of
       (IntObject int1, IntObject int2) ->
           return $ int1 == int2
-      _other -> return False
+      (UnicodeObject str1, UnicodeObject str2) ->
+          return $ str1 == str2
+      (FloatObject float1, FloatObject float2) ->
+          return $ float1 == float2
+      (StringObject str1, StringObject str2) ->
+          return $ str1 == str2
+      -- XXX should really call the __eq__ method
+      _other -> return $ objectID1 == objectID2 
 
 makeMethods :: [HeapObject] -> Eval HeapObject
 makeMethods methods = do

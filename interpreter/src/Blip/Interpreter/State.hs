@@ -37,6 +37,7 @@ module Blip.Interpreter.State
    , peekValueStackFromTopObject
    , returnNone
    , lookupName
+   , lookupNameID
    , lookupConst
    , dumpStack
    )  where
@@ -228,8 +229,8 @@ peekValueStackFromBottomObject :: Int -> Eval HeapObject
 peekValueStackFromBottomObject offset =
    peekValueStackFromBottom offset >>= lookupHeap
 
-lookupName :: ObjectID -> Word16 -> Eval String
-lookupName namesTupleID arg = do 
+lookupNameID :: ObjectID -> Word16 -> Eval ObjectID
+lookupNameID namesTupleID arg = do 
    namesTupleObject <- lookupHeap namesTupleID 
    case namesTupleObject of
       TupleObject {..} -> do
@@ -237,13 +238,16 @@ lookupName namesTupleID arg = do
              arg64 = fromIntegral arg
          if arg64 < 0 || arg64 >= tupleSize
             then error $ "index into name tuple out of bounds"
-            else do
-               let unicodeObjectID = tupleObject_elements ! arg64
-               unicodeObject <- lookupHeap unicodeObjectID
-               case unicodeObject of
-                  UnicodeObject {..} -> return unicodeObject_value
-                  other -> error $ "name does not point to a unicode object: " ++ show other
-      other -> error $ "names tuple not a tuple: " ++ show other
+            else return $ tupleObject_elements ! arg64
+      other -> error $ "Names object not a tuple: " ++ show other
+
+lookupName :: ObjectID -> Word16 -> Eval String
+lookupName namesTupleID arg = do 
+    unicodeObjectID <- lookupNameID namesTupleID arg
+    unicodeObject <- lookupHeap unicodeObjectID
+    case unicodeObject of
+        UnicodeObject {..} -> return unicodeObject_value
+        other -> error $ "name does not point to a unicode object: " ++ show other
 
 lookupConst :: ObjectID -> Word16 -> Eval ObjectID
 lookupConst constsTupleID arg = do 

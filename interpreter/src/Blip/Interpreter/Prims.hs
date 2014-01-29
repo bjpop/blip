@@ -72,10 +72,15 @@ heapObjectToString (DictObject {..}) = do
       str1 <- heapObjectToString object1
       str2 <- heapObjectToString object2
       return ((str1 ++ ": " ++ str2) : strs)
-heapObjectToString (FunctionObject {}) = return "<function>"
+heapObjectToString (FunctionObject {..}) = do
+   nameObject <- lookupHeap functionName
+   case nameObject of
+      UnicodeObject str -> return $ printf "<function %s>" str
+      other -> error $ "function name not a unicode object: " ++ show other
 heapObjectToString (TypeObject {..}) = do
    nameObject <- lookupHeap typeName
    case nameObject of
        UnicodeObject {..} -> 
           return $ printf "<class '%s'>" unicodeObject_value
        other -> error $ "type name is not a string: " ++ show other
+heapObjectToString (MethodObject {}) = return "<method>" 

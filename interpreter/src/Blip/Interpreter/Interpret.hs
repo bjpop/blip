@@ -28,18 +28,19 @@ import Blip.Bytecode
 import qualified Data.Map as Map (lookup)
 import Data.Word (Word16, Word32)
 import Data.Vector as Vector
-   ( fromList, replicateM, reverse, thaw )
+   ( fromList, replicateM, reverse, thaw, (!))
 import Data.Vector.Generic.Mutable as MVector (new, read, write)
 import Blip.Interpreter.Types 
    ( Eval (..) )
 import Blip.Interpreter.State 
    ( runEvalMonad,lookupHeap, initState, getProgramCounter, incProgramCounter
    , pushValueStack, popValueStack, popValueStackObject, getGlobal, setGlobal
-   , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
-   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
+   , allocateHeapObject, allocateHeapObjectPush, lookupName, lookupNameID
+   , setProgramCounter, peekValueStackFromTop, peekValueStackFromBottom
+   , lookupConst, pushFrame, popFrame ) 
 import Blip.Interpreter.Types (ObjectID, HeapObject (..))
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
-import Blip.Interpreter.Builtins (initBuiltins, hashObject, eqObject)
+import Blip.Interpreter.Builtins (initBuiltins, hashObject, eqObject, typeOf)
 import Blip.Interpreter.StandardObjectID (noneObjectID)
 
 interpretFile :: FilePath -> IO ()
@@ -222,7 +223,7 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          storeDict dictObject keyID valID
       BINARY_SUBSCR -> do
          indexID <- popValueStack
-         container <- popValueStackObject
+         container  <- popValueStackObject
          result <- getItem container indexID
          pushValueStack result 
       STORE_SUBSCR -> do
@@ -230,6 +231,11 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          container <- popValueStackObject
          valueID <- popValueStack
          setItem container indexID valueID 
+      LOAD_ATTR -> do
+         nameID <- lookupNameID codeObject_names arg
+         objectID <- popValueStack
+         attributeObjectID <- getAttribute objectID nameID
+         pushValueStack attributeObjectID
       otherOpCode -> error $ "unsupported opcode: " ++ show otherOpCode
 evalOneOpCode otherObject _opcode _arg =
     error $ "evalOneOpCode called on non code object: " ++ show otherObject
@@ -257,6 +263,9 @@ callFunction (FunctionObject _nameObjectID codeObjectID) args = do
    resultObjectID <- evalCodeObject codeObject
    popFrame
    pushValueStack resultObjectID
+callFunction (MethodObject functionID self) args = do
+   functionObject <- lookupHeap functionID
+   callFunction functionObject (self:args)
 callFunction other _args = do
    error $ "call to unsupported object " ++ show other
 
@@ -429,13 +438,14 @@ storeDict object keyID valID =
 getItem :: HeapObject -> ObjectID -> Eval ObjectID
 getItem container indexID =
    case container of
-      (DictObject {..}) -> do
-         maybeObjectID <- HT.lookup dictHashTable indexID
-         case maybeObjectID of
-            -- XXX should raise key error exception
-            Nothing -> error $ "Key Error"
-            Just resultID -> return resultID
       -- XXX should check if index is in bounds
+      TupleObject {..} -> do
+         indexObject <- lookupHeap indexID
+         case indexObject of
+             IntObject indexVal -> do
+                let indexInt = fromIntegral indexVal
+                return (tupleObject_elements ! indexInt)
+             _other -> error $ "tuple indexed with non integer"
       ListObject {..} -> do
          indexObject <- lookupHeap indexID
          case indexObject of
@@ -443,12 +453,19 @@ getItem container indexID =
                 let indexInt = fromIntegral indexVal
                 liftIO $ MVector.read listObject_elements indexInt
              _other -> error $ "list indexed with non integer"
+      (DictObject {..}) -> do
+         maybeObjectID <- HT.lookup dictHashTable indexID
+         case maybeObjectID of
+            -- XXX should raise key error exception
+            Nothing -> error $ "Key Error"
+            Just resultID -> return resultID
+      -- XXX should check if index is in bounds
       _otherObject -> error $ "getItem not supported on: " ++ show container
 
 setItem :: HeapObject -> ObjectID -> ObjectID -> Eval ()
 setItem container indexID valueID =
    case container of
-      (DictObject {..}) ->
+      DictObject {..} ->
          HT.insert dictHashTable indexID valueID
       -- XXX should check if index is in bounds
       ListObject {..} -> do
@@ -459,3 +476,27 @@ setItem container indexID valueID =
                 liftIO $ MVector.write listObject_elements indexInt valueID
              _other -> error $ "list indexed with non integer"
       _otherObject -> error $ "setItem not supported on: " ++ show container
+
+getAttribute :: ObjectID -> ObjectID -> Eval ObjectID
+getAttribute objectID attributeID = do
+   object <- lookupHeap objectID
+   typeID <- typeOf object
+   typeObject <- lookupHeap typeID
+   case typeObject of
+      TypeObject {..} -> do
+         dictObject <- lookupHeap typeAttributes
+         case dictObject of
+            DictObject {..} -> do
+               maybeValue <- HT.lookup dictHashTable attributeID
+               case maybeValue of
+                  Nothing -> error $ "getAttribute failed"
+                  Just valueID -> do
+                     valueObject <- lookupHeap valueID
+                     case valueObject of
+                        FunctionObject {} -> 
+                           allocateHeapObject $ MethodObject valueID objectID
+                        PrimitiveObject {} -> 
+                           allocateHeapObject $ MethodObject valueID objectID
+                        _other -> return valueID 
+            other -> error $ "Type attributes not a dictionary: " ++ show other
+      other -> error $ "Type of object not a type: " ++ show other
