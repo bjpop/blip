@@ -123,6 +123,13 @@ compileReplInput config replString = do
 --
 -- XXX if the result of E is None then we should not print it out,
 -- to be consistent with CPython.
+-- Want something like this:
+--    try:
+--       _ = E
+--    catch Exception as e:
+--       stackTrace e
+--    elif _ is not None:
+--       print(e)      
 wrapWithPrint :: [StatementSpan] -> [StatementSpan]
 wrapWithPrint [StmtExpr {..}] = 
    [assignStmt, printStmt]
