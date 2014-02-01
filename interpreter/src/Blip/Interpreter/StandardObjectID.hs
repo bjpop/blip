@@ -16,7 +16,8 @@ module Blip.Interpreter.StandardObjectID
    ( noneObjectID, noneTypeID, firstFreeID, intTypeID, floatTypeID
    , objectTypeID, typeTypeID, strTypeID, listTypeID, tupleTypeID 
    , dictTypeID, funTypeID, boolTypeID, complexTypeID
-   , bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID )
+   , bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID
+   , methodTypeID )
    where
 
 import Blip.Interpreter.Types (ObjectID)
@@ -40,6 +41,7 @@ data StandardObjectID
    | CodeTypeID  
    | PrimTypeID
    | FrameTypeID
+   | MethodTypeID
    | FirstFreeID          -- this should always be last in the list
    deriving (Eq, Ord, Show, Enum)
 
@@ -102,3 +104,6 @@ primTypeID = toObjectID PrimTypeID
 
 frameTypeID :: ObjectID
 frameTypeID = toObjectID FrameTypeID  
+
+methodTypeID :: ObjectID
+methodTypeID = toObjectID MethodTypeID  

@@ -29,7 +29,8 @@ import Blip.Interpreter.StandardObjectID
    (noneObjectID, noneTypeID, intTypeID, floatTypeID,
    objectTypeID, typeTypeID, strTypeID, listTypeID, tupleTypeID,
    dictTypeID, funTypeID, boolTypeID, complexTypeID, funTypeID,
-   bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID)
+   bytesTypeID, ellipsisTypeID, codeTypeID, primTypeID, frameTypeID,
+   methodTypeID)
 import Blip.Interpreter.Types
    (HeapObject (..), Eval, PrimFun, ObjectID, HashTable)
 import Blip.Interpreter.Prims (heapObjectToString)
@@ -56,6 +57,7 @@ initBuiltins = do
     frameType
     funType
     objectType
+    methodType
     addPrimBuiltin 1 "print" printPrim
     addPrimBuiltin 1 "id" idPrim
     addPrimBuiltin 1 "type" typePrim
@@ -108,6 +110,7 @@ typeOf object =
       FrameObject {} -> return frameTypeID
       FunctionObject {} -> return funTypeID
       LongObject {} -> return intTypeID
+      MethodObject {} -> return methodTypeID
 
 typePrim :: PrimFun
 typePrim [objectID] = do
@@ -141,6 +144,7 @@ upperPrim [objectID] = do
       UnicodeObject string -> do
           allocateHeapObjectPush $ UnicodeObject $ map toUpper string
       _other -> error $ "upper applied to a non string object"
+upperPrim _other = error $ "wrong number of arguments to upper method"
 
 tupleType :: Eval ()
 tupleType = makeType "tuple" tupleTypeID []
@@ -180,6 +184,9 @@ funType = makeType "fun" funTypeID []
 
 objectType :: Eval ()
 objectType = makeType "object" objectTypeID []
+
+methodType :: Eval ()
+methodType = makeType "method" methodTypeID []
 
 hashObject :: ObjectID -> Eval Int
 hashObject objectID = do
