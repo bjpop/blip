@@ -176,8 +176,7 @@ evalOneOpCode (CodeObject {..}) opcode arg =
       LOAD_CONST -> lookupConst codeObject_consts arg >>= pushValueStack
       CALL_FUNCTION -> do
          functionArgs <- Monad.replicateM (fromIntegral arg) popValueStack
-         functionObjectID <- popValueStack
-         functionObject <- lookupHeap functionObjectID
+         functionObject <- popValueStackObject
          callFunction functionObject $ List.reverse functionArgs
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
       -- program counter has already been advanced (by 3) to the next instruction
