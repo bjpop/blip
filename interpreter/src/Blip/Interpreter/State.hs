@@ -35,6 +35,7 @@ module Blip.Interpreter.State
    , peekValueStackFromBottomObject
    , peekValueStackFromTop
    , peekValueStackFromTopObject
+   , pokeValueStack
    , returnNone
    , lookupName
    , lookupNameID
@@ -63,8 +64,8 @@ initState =
    , evalState_globals = Map.empty
    }
 
-runEvalMonad :: Eval a -> EvalState -> IO a
-runEvalMonad (Eval comp) = evalStateT comp
+runEvalMonad :: EvalState -> Eval a -> IO a
+runEvalMonad state (Eval comp) = evalStateT comp state
 
 returnNone :: Eval ()
 returnNone = pushValueStack noneObjectID 
@@ -219,8 +220,9 @@ peekValueStackFromTopObject offset =
 
 peekValueStackFromBottom :: Int -> Eval ObjectID
 peekValueStackFromBottom offset = do
-   frame <- getFrame
-   let valueStack = frameValueStack frame 
+   -- frame <- getFrame
+   -- let valueStack = frameValueStack frame 
+   valueStack <- getValueStack
    -- XXX this may fail if the stack pointer is out of range
    objectID <- liftIO $ MVector.read valueStack offset 
    return objectID
@@ -228,6 +230,11 @@ peekValueStackFromBottom offset = do
 peekValueStackFromBottomObject :: Int -> Eval HeapObject
 peekValueStackFromBottomObject offset =
    peekValueStackFromBottom offset >>= lookupHeap
+
+pokeValueStack :: Int -> ObjectID -> Eval ()
+pokeValueStack offset objectID = do
+   valueStack <- getValueStack
+   liftIO $ MVector.write valueStack offset objectID
 
 lookupNameID :: ObjectID -> Word16 -> Eval ObjectID
 lookupNameID namesTupleID arg = do 

@@ -37,7 +37,7 @@ import Blip.Interpreter.State
    , pushValueStack, popValueStack, popValueStackObject, getGlobal, setGlobal
    , allocateHeapObject, allocateHeapObjectPush, lookupName, lookupNameID
    , setProgramCounter, peekValueStackFromTop, peekValueStackFromBottom
-   , lookupConst, pushFrame, popFrame ) 
+   , lookupConst, pushFrame, popFrame, pokeValueStack ) 
 import Blip.Interpreter.Types (ObjectID, HeapObject (..))
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
 import Blip.Interpreter.Builtins (initBuiltins, hashObject, eqObject, typeOf)
@@ -47,11 +47,9 @@ interpretFile :: FilePath -> IO ()
 interpretFile pycFilename = do
    withFile pycFilename ReadMode $ \handle -> do
       pycFile <- readPyc handle 
-      runEvalMonad
-         (do initBuiltins
-             _ <- interpretObject $ object pycFile
-             return ())
-         initState 
+      runEvalMonad initState $ do
+         initBuiltins
+         interpretObject (object pycFile) >> return ()
 
 interpretObject :: PyObject -> Eval ObjectID
 interpretObject object = do
@@ -211,6 +209,8 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          allocateHeapObjectPush $ FunctionObject functionNameID codeObjectID
       LOAD_FAST ->
          peekValueStackFromBottom (fromIntegral arg) >>= pushValueStack 
+      STORE_FAST -> 
+         popValueStack >>= pokeValueStack (fromIntegral arg)
       BUILD_MAP -> do
          hashTable <- liftIO $ HT.newSized (fromIntegral arg) hashObject eqObject 
          allocateHeapObjectPush $ DictObject hashTable
