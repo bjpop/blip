@@ -75,7 +75,7 @@ runRepl :: Repl a -> IO a
 runRepl comp = do
    initInputState <- initializeInput defaultSettings
    let initReplState = ReplState { repl_inputState = initInputState }
-   runEvalMonad (evalStateT comp initReplState) Interpreter.initState
+   runEvalMonad Interpreter.initState $ evalStateT comp initReplState
 
 withInputState :: (InputState -> Repl a) -> Repl a
 withInputState f = f =<< (gets repl_inputState)
