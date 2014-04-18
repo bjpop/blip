@@ -1,4 +1,4 @@
-Blip, a bytecode compiler and interperter for Python 3 
+Blip, a bytecode compiler and interpreter for Python 3 
 ------------------------------------------------------
 
 Blip compiles Python 3 source files to bytecode. The output bytecode
