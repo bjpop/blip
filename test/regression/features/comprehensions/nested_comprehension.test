@@ -1,4 +1,4 @@
-blip nested_comprehension.py && python3.3 nested_comprehension.pyc
+blip -c nested_comprehension.py && python3 nested_comprehension.pyc
 <<<
 >>>
 []

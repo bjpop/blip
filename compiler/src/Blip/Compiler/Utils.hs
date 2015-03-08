@@ -24,7 +24,8 @@ module Blip.Compiler.Utils
 import Blip.Bytecode (Opcode (..), Bytecode (..))
 import Language.Python.Common.AST as AST
    ( ExprSpan, Expr (..), Statement (..), StatementSpan, Ident (..)
-   , IdentSpan, Op (..), OpSpan, Argument (..), ArgumentSpan )
+   , IdentSpan, Argument (..), ArgumentSpan
+   , YieldArg (..), DictMappingPair (..), DictMappingPairSpan)
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Blip.Compiler.Types (Identifier, ScopeIdentifier, ParameterTypes (..))
 
@@ -110,7 +111,8 @@ isPureExpr (AST.List { list_exprs = exprs }) = all isPureExpr exprs
 isPureExpr (AST.Set { set_exprs = exprs }) = all isPureExpr exprs
 isPureExpr (AST.Paren { paren_expr = expr }) = isPureExpr expr
 isPureExpr (AST.Dictionary { dict_mappings = mappings }) =
-   all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
+   -- all (\(e1, e2) -> isPureExpr e1 && isPureExpr e2) mappings
+   all (\(DictMappingPair e1 e2) -> isPureExpr e1 && isPureExpr e2) mappings
 -- XXX what about Lambda?
 isPureExpr _other = False
 
@@ -154,7 +156,9 @@ mkReturn :: ExprSpan -> StatementSpan
 mkReturn expr = Return { return_expr = Just expr, stmt_annot = SpanEmpty }
 
 mkYield :: ExprSpan -> ExprSpan
-mkYield expr = Yield { yield_expr = Just expr, expr_annot = SpanEmpty }
+-- mkYield expr = Yield { yield_expr = Just expr, expr_annot = SpanEmpty }
+-- XXX support YieldFrom?
+mkYield expr = Yield { yield_arg = Just $ YieldExpr expr, expr_annot = SpanEmpty }
 
 mkVar :: IdentSpan -> ExprSpan
 mkVar ident = Var { var_ident = ident, expr_annot = SpanEmpty }
@@ -174,7 +178,8 @@ mkList exprs = List { list_exprs = exprs, expr_annot = SpanEmpty }
 mkSet :: [ExprSpan] -> ExprSpan
 mkSet exprs = Set { set_exprs = exprs, expr_annot = SpanEmpty }
 
-mkDict :: [(ExprSpan, ExprSpan)] -> ExprSpan
+-- mkDict :: [(ExprSpan, ExprSpan)] -> ExprSpan
+mkDict :: [DictMappingPairSpan] -> ExprSpan
 mkDict exprs = Dictionary { dict_mappings = exprs, expr_annot = SpanEmpty }
 
 mkMethodCall :: ExprSpan -> String -> ExprSpan -> ExprSpan
@@ -183,13 +188,20 @@ mkMethodCall object methodName argument =
 
 mkAttributeLookup :: ExprSpan -> String -> ExprSpan
 mkAttributeLookup object methodName =
+   Dot { dot_expr = object
+       , dot_attribute = mkIdent methodName 
+       , expr_annot = SpanEmpty } 
+{-
    BinaryOp { operator = dot
             , left_op_arg = object
             , right_op_arg = mkVar (mkIdent methodName)
             , expr_annot = SpanEmpty }
+-}
 
+{-
 dot :: OpSpan
 dot = Dot { op_annot = SpanEmpty }
+-}
 
 mkCall :: ExprSpan -> [ExprSpan] -> ExprSpan 
 mkCall fun args = 

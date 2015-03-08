@@ -1,4 +1,4 @@
-blip bytestring_juxtapose.py && python3.3 bytestring_juxtapose.pyc
+blip -c bytestring_juxtapose.py && python3 bytestring_juxtapose.pyc
 <<<
 >>>
 b'Hello World'

@@ -1,4 +1,4 @@
-blip empty_bytestring.py && python3.3 empty_bytestring.pyc
+blip -c empty_bytestring.py && python3 empty_bytestring.pyc
 <<<
 >>>
 b''

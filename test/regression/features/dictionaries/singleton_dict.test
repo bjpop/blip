@@ -1,4 +1,4 @@
-blip singleton_dict.py && python3.3 singleton_dict.pyc
+blip -c singleton_dict.py && python3 singleton_dict.pyc
 <<<
 >>>
 {3: True}

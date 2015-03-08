@@ -1,4 +1,4 @@
-blip ellipsis.py && python3.3 ellipsis.pyc
+blip -c ellipsis.py && python3 ellipsis.pyc
 <<<
 >>>
 Ellipsis

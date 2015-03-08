@@ -24,7 +24,7 @@ import Prelude hiding (mapM)
 import Blip.Compiler.Utils (mkIdent)
 import Language.Python.Common.AST as AST
    ( StatementSpan, Statement (..), ExprSpan, Comprehension (..)
-   , ComprehensionSpan, CompFor (..), CompForSpan, CompIf (..), CompIfSpan
+   , ComprehensionSpan, ComprehensionExprSpan, CompFor (..), CompForSpan, CompIf (..), CompIfSpan
    , CompIter (..), CompIterSpan, IdentSpan ) 
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Language.Python.Common (prettyText)
@@ -102,9 +102,9 @@ resultName = mkIdent "$result"
 
 desugarComprehension
    :: [StatementSpan]      -- Initialiser of the stmt (e.g. $result = [])
-   -> (a -> StatementSpan) -- Update the accumulator (e.g. $result.append(x)) 
+   -> (ComprehensionExprSpan -> StatementSpan) -- Update the accumulator (e.g. $result.append(x)) 
    -> [StatementSpan]      -- Return the accumulator (e.g. return $result)
-   -> ComprehensionSpan a  -- Comprehension to desugar
+   -> ComprehensionSpan    -- Comprehension to desugar
    -> [StatementSpan]      -- Body of the desugared function
 desugarComprehension initStmt updater returnStmt (Comprehension {..}) =
    initStmt ++ [forLoop] ++ returnStmt

@@ -1,4 +1,4 @@
-blip monte_carlo_pi.py; python3.3 monte_carlo_pi.pyc
+blip -c monte_carlo_pi.py && python3 monte_carlo_pi.pyc
 <<<
 >>>
 1: 4.0

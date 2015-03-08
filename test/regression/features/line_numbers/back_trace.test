@@ -1,4 +1,4 @@
-blip back_trace.py && python3.3 back_trace.pyc
+blip -c back_trace.py && python3 back_trace.pyc
 <<<
 >>>
 >>>2

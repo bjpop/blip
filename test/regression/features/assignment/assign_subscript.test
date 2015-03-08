@@ -1,4 +1,4 @@
-blip assign_subscript.py && python3.3 assign_subscript.pyc
+blip -c assign_subscript.py && python3 assign_subscript.pyc
 <<<
 >>>
 [4, 2, 3]

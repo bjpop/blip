@@ -1,4 +1,4 @@
-blip class_super.py && python3.3 class_super.pyc
+blip -c class_super.py && python3 class_super.pyc
 <<<
 >>>
 None

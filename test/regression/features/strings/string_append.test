@@ -1,4 +1,4 @@
-blip string_append.py && python3.3 string_append.pyc
+blip -c string_append.py && python3 string_append.pyc
 <<<
 >>>
 Hello World

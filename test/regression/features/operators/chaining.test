@@ -1,4 +1,4 @@
-blip chaining.py && python3.3 chaining.pyc
+blip -c chaining.py && python3 chaining.pyc
 <<<
 >>>
 True

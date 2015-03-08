@@ -1,4 +1,4 @@
-blip list_comprehension.py && python3.3 list_comprehension.pyc
+blip -c list_comprehension.py && python3 list_comprehension.pyc
 <<<
 >>>
 [6, 7, 7, 8]

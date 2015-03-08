@@ -1,4 +1,4 @@
-blip empty_class.py && python3.3 empty_class.pyc
+blip -c empty_class.py && python3 empty_class.pyc
 <<<
 >>>
 <class '__main__.C'>

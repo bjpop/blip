@@ -35,8 +35,10 @@ module Blip.Interpreter.State
    , peekValueStackFromBottomObject
    , peekValueStackFromTop
    , peekValueStackFromTopObject
+   , pokeValueStack
    , returnNone
    , lookupName
+   , lookupNameID
    , lookupConst
    , dumpStack
    )  where
@@ -51,26 +53,22 @@ import Text.Printf (printf)
 import Blip.Interpreter.Types
    ( ObjectID, HeapObject (..), ProgramCounter, ValueStack
    , EvalState (..), Eval (..) )
+import Blip.Interpreter.StandardObjectID (firstFreeID, noneObjectID) 
 
 initState :: EvalState
 initState =
    EvalState
-   { evalState_objectID = 0
+   { evalState_objectID = firstFreeID
    , evalState_heap = Map.empty
    , evalState_frameStack = []
    , evalState_globals = Map.empty
    }
 
-runEvalMonad :: Eval a -> EvalState -> IO a
-runEvalMonad (Eval comp) = evalStateT comp
+runEvalMonad :: EvalState -> Eval a -> IO a
+runEvalMonad state (Eval comp) = evalStateT comp state
 
--- XXX it would be nice if we could share the None object,
--- rather than allocate a new one each time. But this would
--- require us knowing where it was allocated.
 returnNone :: Eval ()
-returnNone = do
-   objectID <- allocateHeapObject NoneObject
-   pushValueStack objectID
+returnNone = pushValueStack noneObjectID 
 
 allocateHeapObject :: HeapObject -> Eval ObjectID
 allocateHeapObject object = do
@@ -222,8 +220,9 @@ peekValueStackFromTopObject offset =
 
 peekValueStackFromBottom :: Int -> Eval ObjectID
 peekValueStackFromBottom offset = do
-   frame <- getFrame
-   let valueStack = frameValueStack frame 
+   -- frame <- getFrame
+   -- let valueStack = frameValueStack frame 
+   valueStack <- getValueStack
    -- XXX this may fail if the stack pointer is out of range
    objectID <- liftIO $ MVector.read valueStack offset 
    return objectID
@@ -232,8 +231,13 @@ peekValueStackFromBottomObject :: Int -> Eval HeapObject
 peekValueStackFromBottomObject offset =
    peekValueStackFromBottom offset >>= lookupHeap
 
-lookupName :: ObjectID -> Word16 -> Eval String
-lookupName namesTupleID arg = do 
+pokeValueStack :: Int -> ObjectID -> Eval ()
+pokeValueStack offset objectID = do
+   valueStack <- getValueStack
+   liftIO $ MVector.write valueStack offset objectID
+
+lookupNameID :: ObjectID -> Word16 -> Eval ObjectID
+lookupNameID namesTupleID arg = do 
    namesTupleObject <- lookupHeap namesTupleID 
    case namesTupleObject of
       TupleObject {..} -> do
@@ -241,13 +245,16 @@ lookupName namesTupleID arg = do
              arg64 = fromIntegral arg
          if arg64 < 0 || arg64 >= tupleSize
             then error $ "index into name tuple out of bounds"
-            else do
-               let unicodeObjectID = tupleObject_elements ! arg64
-               unicodeObject <- lookupHeap unicodeObjectID
-               case unicodeObject of
-                  UnicodeObject {..} -> return unicodeObject_value
-                  other -> error $ "name does not point to a unicode object: " ++ show other
-      other -> error $ "names tuple not a tuple: " ++ show other
+            else return $ tupleObject_elements ! arg64
+      other -> error $ "Names object not a tuple: " ++ show other
+
+lookupName :: ObjectID -> Word16 -> Eval String
+lookupName namesTupleID arg = do 
+    unicodeObjectID <- lookupNameID namesTupleID arg
+    unicodeObject <- lookupHeap unicodeObjectID
+    case unicodeObject of
+        UnicodeObject {..} -> return unicodeObject_value
+        other -> error $ "name does not point to a unicode object: " ++ show other
 
 lookupConst :: ObjectID -> Word16 -> Eval ObjectID
 lookupConst constsTupleID arg = do 

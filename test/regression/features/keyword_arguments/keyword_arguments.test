@@ -1,4 +1,4 @@
-blip keyword_arguments.py && python3.3 keyword_arguments.pyc
+blip -c keyword_arguments.py && python3 keyword_arguments.pyc
 <<<
 >>>
 11

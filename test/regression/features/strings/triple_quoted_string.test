@@ -1,4 +1,4 @@
-blip triple_quoted_string.py && python3.3 triple_quoted_string.pyc
+blip -c triple_quoted_string.py && python3 triple_quoted_string.pyc
 <<<
 >>>
 Hello

@@ -89,22 +89,22 @@ type Globals = Map String ObjectID
 
 data HeapObject 
    = CodeObject
-        { codeObject_argcount :: !Word32 -- #arguments, except *args
-        , codeObject_kwonlyargcount :: !Word32 -- #keyword only arguments 
-        , codeObject_nlocals :: !Word32 -- #local variables
-        , codeObject_stacksize :: !Word32 -- #entries needed for evaluation stack
-        , codeObject_flags :: !Word32 -- CO_..., see below
-        , codeObject_code :: !ObjectID -- instruction opcodes (a string)
-        , codeObject_consts :: !ObjectID -- list (constants used) XXX seems to be a tuple
-        , codeObject_names :: !ObjectID -- list of strings (names used)
-        , codeObject_varnames :: !ObjectID -- tuple of strings (local variable names)
-        , codeObject_freevars :: !ObjectID -- tuple of strings (free variable names)
-        , codeObject_cellvars :: !ObjectID -- tuple of strings (cell variable names)
-        , codeObject_filename :: !ObjectID -- unicode (where it was loaded from)
-        , codeObject_name :: !ObjectID -- unicode (name, for reference)
-        , codeObject_firstlineno :: !Word32 -- first source line number
-        , codeObject_lnotab :: !ObjectID -- string (encoding addr<->lineno mapping)
-        }
+     { codeObject_argcount :: !Word32 -- #arguments, except *args
+     , codeObject_kwonlyargcount :: !Word32 -- #keyword only arguments 
+     , codeObject_nlocals :: !Word32 -- #local variables
+     , codeObject_stacksize :: !Word32 -- #entries needed for evaluation stack
+     , codeObject_flags :: !Word32 -- CO_..., see below
+     , codeObject_code :: !ObjectID -- instruction opcodes (a string)
+     , codeObject_consts :: !ObjectID -- list (constants used) XXX seems to be a tuple
+     , codeObject_names :: !ObjectID -- list of strings (names used)
+     , codeObject_varnames :: !ObjectID -- tuple of strings (local variable names)
+     , codeObject_freevars :: !ObjectID -- tuple of strings (free variable names)
+     , codeObject_cellvars :: !ObjectID -- tuple of strings (cell variable names)
+     , codeObject_filename :: !ObjectID -- unicode (where it was loaded from)
+     , codeObject_name :: !ObjectID -- unicode (name, for reference)
+     , codeObject_firstlineno :: !Word32 -- first source line number
+     , codeObject_lnotab :: !ObjectID -- string (encoding addr<->lineno mapping)
+     }
    | StringObject { stringObject_string :: !B.ByteString }
    | TupleObject { tupleObject_elements :: !(Vector ObjectID) }
    | IntObject { initObject_value :: !Integer }  
@@ -119,23 +119,37 @@ data HeapObject
    | LongObject { longObject_value :: !Integer }
    | ListObject { listObject_elements :: !(IOVector ObjectID) }
    | PrimitiveObject
-       { primitiveArity :: !Int
-       , primitiveName :: !String
-       , primitiveFun :: !PrimFun
-       }
+     { primitiveArity :: !Int
+     , primitiveName :: !String
+     , primitiveFun :: !PrimFun
+     }
    | FunctionObject
-       { functionName :: !ObjectID
-       , functionCode :: !ObjectID
-       }
+     { functionName :: !ObjectID
+     , functionCode :: !ObjectID
+     }
    | FrameObject
-       { frameCode :: !ObjectID
-       , frameValueStack :: !ValueStack
-       , frameStackPointer :: !Int
-       , frameProgramCounter :: !ProgramCounter
-       -- locals, globals, builtins, blockStack
-       }
+     { frameCode :: !ObjectID
+     , frameValueStack :: !ValueStack
+     , frameStackPointer :: !Int
+     , frameProgramCounter :: !ProgramCounter
+     -- locals, globals, builtins, blockStack
+     }
    | DictObject
-       { dictHashTable :: !HashTable }
+     { dictHashTable :: !HashTable }
+   | TypeObject
+     { typeName :: !ObjectID  -- unicode 
+     , typeAttributes :: !ObjectID -- a dictionary
+     -- , typeConstructor :: !ObjectID -- a function
+     -- , typeBases :: !ObjectID -- a tuple       
+     -- , typeMRO :: !ObjectID -- a tuple
+     }
+   -- Method objects are used for bound instance methods returned by
+   -- instancename.methodname. ClassName.methodname returns an ordinary
+   -- function.
+   | MethodObject
+     { methodFunction :: !ObjectID -- The callable object implementing the method
+     , methodSelf :: !ObjectID -- instance it is bound to
+     }
 
 instance Show HeapObject where
    show (CodeObject {}) = "code object"
@@ -155,3 +169,5 @@ instance Show HeapObject where
    show (FunctionObject {}) = "function object"
    show (FrameObject {}) = "frame object"
    show (DictObject {}) = "dict object"
+   show (TypeObject {}) = "type object"
+   show (MethodObject {}) = "method object"

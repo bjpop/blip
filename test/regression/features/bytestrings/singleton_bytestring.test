@@ -1,4 +1,4 @@
-blip singleton_bytestring.py && python3.3 singleton_bytestring.pyc
+blip -c singleton_bytestring.py && python3 singleton_bytestring.pyc
 <<<
 >>>
 b'x'

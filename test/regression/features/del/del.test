@@ -1,4 +1,4 @@
-blip del.py && python3.3 del.pyc
+blip -c del.py && python3 del.pyc
 <<<
 >>>
 Caught NameError

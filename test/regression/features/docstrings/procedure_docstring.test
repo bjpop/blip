@@ -1,4 +1,4 @@
-blip procedure_docstring.py && python3.3 procedure_docstring.pyc
+blip -c procedure_docstring.py && python3 procedure_docstring.pyc
 <<<
 >>>
 Hello World

@@ -1,4 +1,4 @@
-blip tail_call_method.py && python3.3 tail_call_method.pyc
+blip -c tail_call_method.py && python3 tail_call_method.pyc
 <<<
 >>>
 12

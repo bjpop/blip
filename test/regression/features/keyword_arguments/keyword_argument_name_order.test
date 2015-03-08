@@ -1,4 +1,4 @@
-blip keyword_argument_name_order.py && python3.3 keyword_argument_name_order.pyc
+blip -c keyword_argument_name_order.py && python3 keyword_argument_name_order.pyc
 <<<
 >>>
 (1, 5)

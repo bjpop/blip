@@ -1,4 +1,4 @@
-blip with.py && python3.3 with.pyc
+blip -c with.py && python3 with.pyc
 <<<
 >>>
 Entered context

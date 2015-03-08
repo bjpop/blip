@@ -1,4 +1,4 @@
-blip simple_tail_call.py && python3.3 simple_tail_call.pyc
+blip -c simple_tail_call.py && python3 simple_tail_call.pyc
 <<<
 >>>
 10

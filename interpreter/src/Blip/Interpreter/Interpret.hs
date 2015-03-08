@@ -13,7 +13,7 @@
 -----------------------------------------------------------------------------
 
 module Blip.Interpreter.Interpret
-   (interpretFile, interpretObject, initGlobals) where
+   (interpretFile, interpretObject) where
 
 import Data.ByteString.Lazy as BS (length, index)
 import Data.Fixed (mod')
@@ -28,32 +28,28 @@ import Blip.Bytecode
 import qualified Data.Map as Map (lookup)
 import Data.Word (Word16, Word32)
 import Data.Vector as Vector
-   ( fromList, replicateM, reverse, thaw )
+   ( fromList, replicateM, reverse, thaw, (!))
 import Data.Vector.Generic.Mutable as MVector (new, read, write)
 import Blip.Interpreter.Types 
    ( Eval (..) )
 import Blip.Interpreter.State 
    ( runEvalMonad,lookupHeap, initState, getProgramCounter, incProgramCounter
    , pushValueStack, popValueStack, popValueStackObject, getGlobal, setGlobal
-   , allocateHeapObject, allocateHeapObjectPush, lookupName, setProgramCounter
-   , peekValueStackFromTop, peekValueStackFromBottom, lookupConst, pushFrame, popFrame ) 
+   , allocateHeapObject, allocateHeapObjectPush, lookupName, lookupNameID
+   , setProgramCounter, peekValueStackFromTop, peekValueStackFromBottom
+   , lookupConst, pushFrame, popFrame, pokeValueStack ) 
 import Blip.Interpreter.Types (ObjectID, HeapObject (..))
-import Blip.Interpreter.Prims (printPrim, addPrimGlobal)
 import Blip.Interpreter.HashTable.Basic as HT (newSized, insert, lookup)
-
-initGlobals :: Eval ()
-initGlobals = do
-   addPrimGlobal 1 "print" printPrim
+import Blip.Interpreter.Builtins (initBuiltins, hashObject, eqObject, typeOf)
+import Blip.Interpreter.StandardObjectID (noneObjectID)
 
 interpretFile :: FilePath -> IO ()
 interpretFile pycFilename = do
    withFile pycFilename ReadMode $ \handle -> do
       pycFile <- readPyc handle 
-      runEvalMonad
-         (do initGlobals
-             _ <- interpretObject $ object pycFile
-             return ())
-         initState 
+      runEvalMonad initState $ do
+         initBuiltins
+         interpretObject (object pycFile) >> return ()
 
 interpretObject :: PyObject -> Eval ObjectID
 interpretObject object = do
@@ -74,6 +70,8 @@ interpretObject object = do
       CodeObject {} -> evalCodeObject heapObject
       _other -> error "evalTopObject: not a code object"
 
+-- XXX shouldn't keep looking up the bytecode string
+-- from the heap every time
 evalCodeObject :: HeapObject -> Eval ObjectID
 evalCodeObject object@(CodeObject {..}) = do
    pc <- getProgramCounter
@@ -178,8 +176,7 @@ evalOneOpCode (CodeObject {..}) opcode arg =
       LOAD_CONST -> lookupConst codeObject_consts arg >>= pushValueStack
       CALL_FUNCTION -> do
          functionArgs <- Monad.replicateM (fromIntegral arg) popValueStack
-         functionObjectID <- popValueStack
-         functionObject <- lookupHeap functionObjectID
+         functionObject <- popValueStackObject
          callFunction functionObject $ List.reverse functionArgs
       JUMP_ABSOLUTE -> setProgramCounter $ fromIntegral arg 
       -- program counter has already been advanced (by 3) to the next instruction
@@ -214,6 +211,8 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          allocateHeapObjectPush $ FunctionObject functionNameID codeObjectID
       LOAD_FAST ->
          peekValueStackFromBottom (fromIntegral arg) >>= pushValueStack 
+      STORE_FAST -> 
+         popValueStack >>= pokeValueStack (fromIntegral arg)
       BUILD_MAP -> do
          hashTable <- liftIO $ HT.newSized (fromIntegral arg) hashObject eqObject 
          allocateHeapObjectPush $ DictObject hashTable
@@ -225,7 +224,7 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          storeDict dictObject keyID valID
       BINARY_SUBSCR -> do
          indexID <- popValueStack
-         container <- popValueStackObject
+         container  <- popValueStackObject
          result <- getItem container indexID
          pushValueStack result 
       STORE_SUBSCR -> do
@@ -233,6 +232,11 @@ evalOneOpCode (CodeObject {..}) opcode arg =
          container <- popValueStackObject
          valueID <- popValueStack
          setItem container indexID valueID 
+      LOAD_ATTR -> do
+         nameID <- lookupNameID codeObject_names arg
+         objectID <- popValueStack
+         attributeObjectID <- getAttribute objectID nameID
+         pushValueStack attributeObjectID
       otherOpCode -> error $ "unsupported opcode: " ++ show otherOpCode
 evalOneOpCode otherObject _opcode _arg =
     error $ "evalOneOpCode called on non code object: " ++ show otherObject
@@ -258,9 +262,11 @@ callFunction (FunctionObject _nameObjectID codeObjectID) args = do
    mapM_ pushValueStack args
    codeObject <- lookupHeap codeObjectID
    resultObjectID <- evalCodeObject codeObject
-   _ <- evalCodeObject codeObject
    popFrame
    pushValueStack resultObjectID
+callFunction (MethodObject functionID self) args = do
+   functionObject <- lookupHeap functionID
+   callFunction functionObject (self:args)
 callFunction other _args = do
    error $ "call to unsupported object " ++ show other
 
@@ -367,42 +373,41 @@ binOp ops = do
 -- each nested PyObject into its corresponding Object.
 -- Returns the ID of the topmost inserted object
 loadIntoHeap :: PyObject -> Eval ObjectID 
-loadIntoHeap object = do
-   heapObject <- case object of 
-      Code {..} -> do
-         codeID <- loadIntoHeap code
-         constsID <- loadIntoHeap consts
-         namesID <- loadIntoHeap names
-         varnamesID <- loadIntoHeap varnames
-         freevarsID <- loadIntoHeap freevars
-         cellvarsID <- loadIntoHeap cellvars
-         filenameID <- loadIntoHeap filename
-         nameID <- loadIntoHeap name
-         lnotabID <- loadIntoHeap lnotab
-         return $
-            CodeObject
-            { codeObject_argcount = argcount
-            , codeObject_kwonlyargcount = kwonlyargcount
-            , codeObject_nlocals = nlocals
-            , codeObject_stacksize = stacksize
-            , codeObject_flags = flags
-            , codeObject_code = codeID
-            , codeObject_consts = constsID
-            , codeObject_names = namesID
-            , codeObject_varnames = varnamesID
-            , codeObject_freevars = freevarsID
-            , codeObject_cellvars = cellvarsID
-            , codeObject_filename = filenameID
-            , codeObject_name = nameID
-            , codeObject_firstlineno = firstlineno
-            , codeObject_lnotab = lnotabID
-            }
-      Tuple {..} -> do
-         elementIDs <- mapM loadIntoHeap elements 
-         return $ TupleObject $ fromList elementIDs
-      atomicObject ->
-         return $ atomicPyObjectToHeapObject atomicObject
-   allocateHeapObject heapObject
+loadIntoHeap (Code {..}) = do
+   codeID <- loadIntoHeap code
+   constsID <- loadIntoHeap consts
+   namesID <- loadIntoHeap names
+   varnamesID <- loadIntoHeap varnames
+   freevarsID <- loadIntoHeap freevars
+   cellvarsID <- loadIntoHeap cellvars
+   filenameID <- loadIntoHeap filename
+   nameID <- loadIntoHeap name
+   lnotabID <- loadIntoHeap lnotab
+   allocateHeapObject $ 
+      CodeObject
+      { codeObject_argcount = argcount
+      , codeObject_kwonlyargcount = kwonlyargcount
+      , codeObject_nlocals = nlocals
+      , codeObject_stacksize = stacksize
+      , codeObject_flags = flags
+      , codeObject_code = codeID
+      , codeObject_consts = constsID
+      , codeObject_names = namesID
+      , codeObject_varnames = varnamesID
+      , codeObject_freevars = freevarsID
+      , codeObject_cellvars = cellvarsID
+      , codeObject_filename = filenameID
+      , codeObject_name = nameID
+      , codeObject_firstlineno = firstlineno
+      , codeObject_lnotab = lnotabID
+      }
+loadIntoHeap (Tuple {..}) = do
+   elementIDs <- mapM loadIntoHeap elements 
+   allocateHeapObject $ TupleObject $ fromList elementIDs
+-- None is allocated at initialisation time
+loadIntoHeap None = return noneObjectID
+loadIntoHeap atomicObject =
+   allocateHeapObject $ atomicPyObjectToHeapObject atomicObject
 
 atomicPyObjectToHeapObject :: PyObject -> HeapObject
 atomicPyObjectToHeapObject (Long val) = LongObject val
@@ -412,30 +417,17 @@ atomicPyObjectToHeapObject TrueObj = TrueObject
 atomicPyObjectToHeapObject FalseObj = FalseObject
 atomicPyObjectToHeapObject (Unicode val) = UnicodeObject val
 atomicPyObjectToHeapObject Ellipsis = EllipsisObject
-atomicPyObjectToHeapObject None = NoneObject
 atomicPyObjectToHeapObject (Float val) = FloatObject val
 atomicPyObjectToHeapObject (Int val) = IntObject $ fromIntegral val
 atomicPyObjectToHeapObject (String val) = StringObject val
-atomicPyObjectToHeapObject other
-   = error ("atomicPyObjectToHeapObject applied to non-atomic object: " ++ show other)
+atomicPyObjectToHeapObject None = NoneObject
+atomicPyObjectToHeapObject other =
+   error ("atomicPyObjectToHeapObject applied to non-atomic object: " ++ show other)
 
 getCodeStackSize :: HeapObject -> Word32
 getCodeStackSize (CodeObject {..}) = codeObject_stacksize
-getCodeStackSize other = error $ "attempt to get stack size from non-code object: " ++ show other 
-
--- XXX fixme
-hashObject :: ObjectID -> Eval Int
-hashObject _objectID = return 12
-
--- XXX fixme
-eqObject :: ObjectID -> ObjectID -> Eval Bool
-eqObject objectID1 objectID2 = do
-   object1 <- lookupHeap objectID1
-   object2 <- lookupHeap objectID2
-   case (object1, object2) of
-      (IntObject int1, IntObject int2) ->
-          return $ int1 == int2
-      _other -> return False
+getCodeStackSize other =
+   error $ "attempt to get stack size from non-code object: " ++ show other 
 
 storeDict :: HeapObject -> ObjectID -> ObjectID -> Eval ()
 storeDict object keyID valID =
@@ -447,13 +439,14 @@ storeDict object keyID valID =
 getItem :: HeapObject -> ObjectID -> Eval ObjectID
 getItem container indexID =
    case container of
-      (DictObject {..}) -> do
-         maybeObjectID <- HT.lookup dictHashTable indexID
-         case maybeObjectID of
-            -- XXX should raise key error exception
-            Nothing -> error $ "Key Error"
-            Just resultID -> return resultID
       -- XXX should check if index is in bounds
+      TupleObject {..} -> do
+         indexObject <- lookupHeap indexID
+         case indexObject of
+             IntObject indexVal -> do
+                let indexInt = fromIntegral indexVal
+                return (tupleObject_elements ! indexInt)
+             _other -> error $ "tuple indexed with non integer"
       ListObject {..} -> do
          indexObject <- lookupHeap indexID
          case indexObject of
@@ -461,12 +454,19 @@ getItem container indexID =
                 let indexInt = fromIntegral indexVal
                 liftIO $ MVector.read listObject_elements indexInt
              _other -> error $ "list indexed with non integer"
+      (DictObject {..}) -> do
+         maybeObjectID <- HT.lookup dictHashTable indexID
+         case maybeObjectID of
+            -- XXX should raise key error exception
+            Nothing -> error $ "Key Error"
+            Just resultID -> return resultID
+      -- XXX should check if index is in bounds
       _otherObject -> error $ "getItem not supported on: " ++ show container
 
 setItem :: HeapObject -> ObjectID -> ObjectID -> Eval ()
 setItem container indexID valueID =
    case container of
-      (DictObject {..}) ->
+      DictObject {..} ->
          HT.insert dictHashTable indexID valueID
       -- XXX should check if index is in bounds
       ListObject {..} -> do
@@ -477,3 +477,27 @@ setItem container indexID valueID =
                 liftIO $ MVector.write listObject_elements indexInt valueID
              _other -> error $ "list indexed with non integer"
       _otherObject -> error $ "setItem not supported on: " ++ show container
+
+getAttribute :: ObjectID -> ObjectID -> Eval ObjectID
+getAttribute objectID attributeID = do
+   object <- lookupHeap objectID
+   typeID <- typeOf object
+   typeObject <- lookupHeap typeID
+   case typeObject of
+      TypeObject {..} -> do
+         dictObject <- lookupHeap typeAttributes
+         case dictObject of
+            DictObject {..} -> do
+               maybeValue <- HT.lookup dictHashTable attributeID
+               case maybeValue of
+                  Nothing -> error $ "getAttribute failed"
+                  Just valueID -> do
+                     valueObject <- lookupHeap valueID
+                     case valueObject of
+                        FunctionObject {} -> 
+                           allocateHeapObject $ MethodObject valueID objectID
+                        PrimitiveObject {} -> 
+                           allocateHeapObject $ MethodObject valueID objectID
+                        _other -> return valueID 
+            other -> error $ "Type attributes not a dictionary: " ++ show other
+      other -> error $ "Type of object not a type: " ++ show other

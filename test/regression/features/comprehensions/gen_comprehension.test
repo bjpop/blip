@@ -1,4 +1,4 @@
-blip gen_comprehension.py && python3.3 gen_comprehension.pyc
+blip -c gen_comprehension.py && python3 gen_comprehension.pyc
 <<<
 >>>
 <class 'generator'>

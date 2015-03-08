@@ -1,5 +1,5 @@
 Name:                bliplib
-Version:             0.2.1
+Version:             0.3.0
 Synopsis:            Support code for Blip.
 Homepage:            https://github.com/bjpop/blip 
 License:             BSD3
@@ -32,7 +32,7 @@ Library {
       containers==0.5.*,
       pretty==1.1.*,
       bytestring==0.10.*,
-      utf8-string==0.3.*
+      utf8-string==1
    other-modules:
       Paths_bliplib
 }

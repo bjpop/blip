@@ -1,4 +1,4 @@
-blip plus.py && python3.3 plus.pyc
+blip -c plus.py && python3 plus.pyc
 <<<
 >>>
 1235

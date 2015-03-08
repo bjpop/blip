@@ -1,4 +1,4 @@
-blip ackermann.py; python3.3 ackermann.pyc 
+blip -c ackermann.py && python3 ackermann.pyc 
 <<<
 >>>
 125

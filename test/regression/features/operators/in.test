@@ -1,4 +1,4 @@
-blip in.py && python3.3 in.pyc
+blip -c in.py && python3 in.pyc
 <<<
 >>>
 True

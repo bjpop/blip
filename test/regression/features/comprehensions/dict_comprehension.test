@@ -1,4 +1,4 @@
-blip dict_comprehension.py && python3.3 dict_comprehension.pyc
+blip -c dict_comprehension.py && python3 dict_comprehension.pyc
 <<<
 >>>
 {2: 5, 3: 5}

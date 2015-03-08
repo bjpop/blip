@@ -1,4 +1,4 @@
-blip raise.py && python3.3 raise.pyc
+blip -c raise.py && python3 raise.pyc
 <<<
 >>>
 caught exception

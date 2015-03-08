@@ -1,4 +1,4 @@
-blip is.py && python3.3 is.pyc
+blip -c is.py && python3 is.pyc
 <<<
 >>>
 False
