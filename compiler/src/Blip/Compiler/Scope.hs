@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards, PatternGuards, ExistentialQuantification #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecordWildCards, PatternGuards #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -61,7 +61,10 @@ import Language.Python.Common.AST as AST
    ( Statement (..), StatementSpan, Ident (..), Expr (..), ExprSpan
    , Argument (..), ArgumentSpan, RaiseExpr (..), RaiseExprSpan
    , Slice (..), SliceSpan, ModuleSpan, Module (..), ParameterSpan
+   , YieldArg (..), YieldArgSpan
    , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
+   , ComprehensionExpr (..), ComprehensionExprSpan
+   , DictMappingPair (..), DictMappingPairSpan
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
    , CompIfSpan, Handler (..), HandlerSpan, ExceptClause (..), ExceptClauseSpan  )
 import Data.Monoid (Monoid (..))
@@ -130,7 +133,8 @@ prettyScope nestedScope =
 data Definition
    = DefStmt StatementSpan -- class, or def
    | DefLambda ExprSpan -- lambda
-   | forall e . VarUsage e => DefComprehension (ComprehensionSpan e) -- comprehension
+   -- | forall e . VarUsage e => DefComprehension (ComprehensionSpan e) -- comprehension
+   | DefComprehension ComprehensionSpan -- comprehension
 
 data Usage =
    Usage
@@ -436,13 +440,16 @@ instance VarUsage ExprSpan where
       varUsage ce_false_branch
    -- if it is a dot operator then the right argument must be a global name
    -- but it is not defined in this module so we can ignore it
-   varUsage (BinaryOp {..})
-      | Dot {} <- operator = varUsage left_op_arg 
-      | otherwise = varUsage left_op_arg `mappend` varUsage right_op_arg
+   varUsage (BinaryOp {..}) =
+      varUsage left_op_arg `mappend` varUsage right_op_arg
+      -- | Dot {} <- operator = varUsage left_op_arg 
+      -- | otherwise = varUsage left_op_arg `mappend` varUsage right_op_arg
+   varUsage (Dot { dot_expr = e }) = varUsage e
    varUsage (UnaryOp {..}) = varUsage op_arg
    varUsage expr@(Lambda {..}) = mempty { usage_definitions = [DefLambda expr] }
    varUsage (Tuple {..}) = varUsage tuple_exprs
-   varUsage (Yield {..}) = varUsage yield_expr 
+   -- varUsage (Yield {..}) = varUsage yield_expr 
+   varUsage (Yield {..}) = varUsage yield_arg
    varUsage (Generator {..}) =
       mempty { usage_definitions = [DefComprehension gen_comprehension] }
    varUsage (ListComp {..}) =
@@ -458,6 +465,10 @@ instance VarUsage ExprSpan where
    varUsage (Paren {..}) = varUsage paren_expr
    varUsage _other = mempty
 
+instance VarUsage YieldArgSpan where
+   varUsage (YieldFrom e _) = varUsage e
+   varUsage (YieldExpr e) = varUsage e
+
 instance VarUsage ArgumentSpan where
    varUsage (ArgExpr {..}) = varUsage arg_expr
    varUsage (ArgVarArgsPos {..}) = varUsage arg_expr
@@ -472,10 +483,14 @@ instance VarUsage SliceSpan where
    varUsage (SliceExpr {..}) = varUsage slice_expr
    varUsage (SliceEllipsis {}) = mempty
 
-instance VarUsage a => VarUsage (ComprehensionSpan a) where
+instance VarUsage ComprehensionSpan where
    varUsage (Comprehension {..}) = 
       varUsage comprehension_expr `mappend`
       varUsage comprehension_for
+
+instance VarUsage ComprehensionExprSpan where
+   varUsage (ComprehensionExpr e) = varUsage e
+   varUsage (ComprehensionDict mapping) = varUsage mapping
 
 instance VarUsage CompForSpan where
    varUsage (CompFor {..}) = 
@@ -491,6 +506,10 @@ instance VarUsage CompIfSpan where
    varUsage (CompIf {..}) = 
       varUsage comp_if `mappend`
       varUsage comp_if_iter
+
+instance VarUsage DictMappingPairSpan where
+   varUsage (DictMappingPair e1 e2) =
+      varUsage e1 `mappend` varUsage e2
 
 newtype AssignTargets = AssignTargets [ExprSpan]
 

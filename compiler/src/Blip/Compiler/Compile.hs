@@ -83,7 +83,9 @@ import Language.Python.Common.AST as AST
    , ImportRelativeSpan, FromItems (..), FromItemsSpan, FromItem (..)
    , FromItemSpan, DecoratorSpan, Decorator (..), ComprehensionSpan
    , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
-   , ParameterSpan, Parameter (..), RaiseExpr (..), RaiseExprSpan )
+   , ComprehensionExpr (..), ComprehensionExprSpan
+   , ParameterSpan, Parameter (..), RaiseExpr (..), RaiseExprSpan
+   , DictMappingPair (..), YieldArg (..), YieldArgSpan )
 import Language.Python.Common (prettyText)
 import Language.Python.Common.StringEscape (unescapeString)
 import Language.Python.Common.SrcLocation (SrcSpan (..))
@@ -327,6 +329,16 @@ compileStmt (AugmentedAssign {..}) =
          compile aug_assign_op
          emitCodeNoArg ROT_THREE
          emitCodeNoArg STORE_SUBSCR
+      expr@(Dot {..}) -> do
+         compile dot_expr 
+         emitCodeNoArg DUP_TOP
+         index <- lookupNameVar $ ident_string $ dot_attribute 
+         emitCodeArg LOAD_ATTR index 
+         compile aug_assign_expr
+         compile aug_assign_op
+         emitCodeNoArg ROT_TWO
+         emitCodeArg STORE_ATTR index 
+{-
       expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) -> do
          compile $ left_op_arg expr
          emitCodeNoArg DUP_TOP
@@ -336,6 +348,7 @@ compileStmt (AugmentedAssign {..}) =
          compile aug_assign_op
          emitCodeNoArg ROT_TWO
          emitCodeArg STORE_ATTR index 
+-}
       other -> error $ "unexpected expression in augmented assignment: " ++ prettyText other
 compileStmt (Return { return_expr = Nothing }) = returnNone
 compileStmt (Return { return_expr = Just expr }) =  
@@ -518,33 +531,35 @@ compileExpr (AST.Set {..}) = do
    emitCodeArg BUILD_SET $ fromIntegral $ length set_exprs
 compileExpr (Dictionary {..}) = do
    emitCodeArg BUILD_MAP $ fromIntegral $ length dict_mappings
-   forM_ dict_mappings $ \(key, value) -> do
+   forM_ dict_mappings $ \(DictMappingPair key value) -> do
       compile value
       compile key
       emitCodeNoArg STORE_MAP
 compileExpr (ListComp {..}) = do
    let initStmt = [mkAssignVar resultName (mkList [])]
-       updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "append" expr
+       updater = \(ComprehensionExpr expr) -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "append" expr
        returnStmt = [mkReturn $ mkVar $ resultName]
    compileComprehension "<listcomp>" initStmt updater returnStmt list_comprehension
 compileExpr (SetComp {..}) = do
    let initStmt = [mkAssignVar resultName (mkSet [])]
-       updater = \expr -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "add" expr
+       updater = \(ComprehensionExpr expr) -> mkStmtExpr $ mkMethodCall (mkVar $ resultName) "add" expr
        returnStmt = [mkReturn $ mkVar $ resultName]
    compileComprehension "<setcomp>" initStmt updater returnStmt set_comprehension
 compileExpr (DictComp {..}) = do
    let initStmt = [mkAssignVar resultName (mkDict [])]
-       updater = \(key, val) -> 
+       updater = \(ComprehensionDict (DictMappingPair key val)) -> 
           mkAssign (mkSubscript (mkVar $ resultName) key) val
        returnStmt = [mkReturn $ mkVar $ resultName]
    compileComprehension "<dictcomp>" initStmt updater returnStmt dict_comprehension
 compileExpr (Generator {..}) = do
-   let updater = \expr -> mkStmtExpr $ mkYield expr
+   let updater = \(ComprehensionExpr expr) -> mkStmtExpr $ mkYield expr
    compileComprehension "<gencomp>" [] updater [] gen_comprehension
-compileExpr (Yield { yield_expr = Nothing }) =
+compileExpr (Yield { yield_arg = Nothing }) =
    compileConstantEmit Blip.None >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
-compileExpr (Yield { yield_expr = Just expr }) =
+compileExpr (Yield { yield_arg = Just (YieldExpr expr) }) =
    compile expr >> emitCodeNoArg YIELD_VALUE >> setFlag co_generator
+compileExpr e@(Yield { yield_arg = Just (YieldFrom expr _) })
+   = error $ "yield from not supported: " ++ show e
 compileExpr (Call {..}) = do
    compile call_fun
    compileCall 0 call_args
@@ -556,10 +571,13 @@ compileExpr (SlicedExpr {..}) = do
    compile slicee
    compileSlices slices
    emitCodeNoArg BINARY_SUBSCR
+compileExpr (Dot {..}) = do
+   compile dot_expr 
+   varInfo <- lookupNameVar $ ident_string dot_attribute 
+   emitCodeArg LOAD_ATTR varInfo 
 compileExpr exp@(BinaryOp {..})
    | isBoolean operator = compileBoolOpExpr exp
    | isComparison operator = compileCompareOpExpr exp
-   | isDot operator = compileDot exp 
    | otherwise = do 
         compile left_op_arg
         compile right_op_arg
@@ -921,10 +939,16 @@ compileAssignTo (AST.List {..}) = do
    emitCodeArg UNPACK_SEQUENCE $ fromIntegral $ length list_exprs
    mapM_ compileAssignTo list_exprs
 compileAssignTo (AST.Paren {..}) = compileAssignTo paren_expr
+compileAssignTo expr@(Dot {..} ) = do
+   compile dot_expr 
+   index <- lookupNameVar $ ident_string dot_attribute
+   emitCodeArg STORE_ATTR index
+{-
 compileAssignTo expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}}) = do
    compile $ left_op_arg expr
    index <- lookupNameVar $ ident_string $ var_ident
    emitCodeArg STORE_ATTR index
+-}
 compileAssignTo (SlicedExpr {..}) = do
    compile slicee
    compileSlices slices
@@ -939,10 +963,16 @@ compileDelete (Subscript {..}) =
    compile subscript_expr >>
    emitCodeNoArg DELETE_SUBSCR
 compileDelete (AST.Paren {..}) = compileDelete paren_expr
+compileDelete (Dot {..}) = do
+   compile dot_expr 
+   index <- lookupNameVar $ ident_string dot_attribute
+   emitCodeArg DELETE_ATTR index
+{-
 compileDelete (expr@(BinaryOp { operator = Dot {}, right_op_arg = Var {..}})) = do
    compile $ left_op_arg expr
    index <- lookupNameVar $ ident_string $ var_ident
    emitCodeArg DELETE_ATTR index
+-}
 compileDelete (SlicedExpr {..}) = do
    compile slicee
    compileSlices slices
@@ -1010,9 +1040,9 @@ compileGuard restLabel (expr, stmts) = do
 compileComprehension
    :: Identifier 
    -> [StatementSpan]
-   -> (a -> StatementSpan) 
+   -> (ComprehensionExprSpan -> StatementSpan) 
    -> [StatementSpan]
-   -> ComprehensionSpan a
+   -> ComprehensionSpan
    -> Compile ()
 compileComprehension name initStmt updater returnStmt comprehension = do
    let desugaredComp = desugarComprehension initStmt updater returnStmt comprehension 
@@ -1169,9 +1199,11 @@ assignOpCode assign =
       RightShiftAssign {} -> INPLACE_RSHIFT
       FloorDivAssign {} -> INPLACE_FLOOR_DIVIDE
 
+{-
 isDot :: OpSpan -> Bool
 isDot (Dot {}) = True
 isDot _other = False
+-}
 
 isBoolean :: OpSpan -> Bool
 isBoolean (And {}) = True
@@ -1191,6 +1223,7 @@ isComparison (IsNot {}) = True
 isComparison (Is {}) = True
 isComparison _other = False
 
+{-
 compileDot :: ExprSpan -> Compile ()
 compileDot (BinaryOp {..}) = do
    compile left_op_arg
@@ -1202,6 +1235,7 @@ compileDot (BinaryOp {..}) = do
       other -> error $ "right argument of dot operator not a variable:\n" ++ prettyText other
 compileDot other =
    error $ "compileDot applied to an unexpected expression: " ++ prettyText other
+-}
 
 compileBoolOpExpr :: ExprSpan -> Compile ()
 compileBoolOpExpr (BinaryOp {..}) = do

@@ -40,7 +40,17 @@ printIfNotNone x = do
 heapObjectToString :: HeapObject -> Eval String
 heapObjectToString (CodeObject {}) = return $ printf "<code>"
 heapObjectToString (StringObject {..}) = return $ BS.unpack stringObject_string
-heapObjectToString (TupleObject {..}) = return $ "<tuple>"
+-- heapObjectToString (TupleObject {..}) = return $ "<tuple>"
+heapObjectToString (TupleObject {..}) = do
+   let vector = tupleObject_elements 
+   elementObjects <- Vector.mapM lookupHeap vector 
+   elementStrings <- Vector.mapM heapObjectToString elementObjects
+   let elementStringsList = Vector.toList elementStrings
+   let commaList =
+          if length elementStringsList == 1
+             then zipWith (++) elementStringsList (repeat ", ") 
+             else intersperse ", " elementStringsList
+   return $ printf "(%s)" (concat commaList)
 heapObjectToString (IntObject {..}) = return $ show initObject_value
 heapObjectToString (FloatObject {..}) = return $ show floatObject_value 
 heapObjectToString NoneObject = return "None"

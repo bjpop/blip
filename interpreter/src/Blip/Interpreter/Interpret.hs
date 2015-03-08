@@ -70,6 +70,8 @@ interpretObject object = do
       CodeObject {} -> evalCodeObject heapObject
       _other -> error "evalTopObject: not a code object"
 
+-- XXX shouldn't keep looking up the bytecode string
+-- from the heap every time
 evalCodeObject :: HeapObject -> Eval ObjectID
 evalCodeObject object@(CodeObject {..}) = do
    pc <- getProgramCounter
