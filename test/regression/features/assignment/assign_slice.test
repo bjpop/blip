@@ -1,4 +1,4 @@
-blip assign_slice.py && python3.3 assign_slice.pyc
+blip -c assign_slice.py && python3 assign_slice.pyc
 <<<
 >>>
 [1, 88, 4, 5]

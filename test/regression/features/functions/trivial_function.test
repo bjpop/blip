@@ -1,4 +1,4 @@
-blip trivial_function.py && python3.3 trivial_function.pyc
+blip -c trivial_function.py && python3 trivial_function.pyc
 <<<
 >>>
 <class 'function'>

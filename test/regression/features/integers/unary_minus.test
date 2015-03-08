@@ -1,4 +1,4 @@
-blip unary_minus.py && python3.3 unary_minus.pyc
+blip -c unary_minus.py && python3 unary_minus.pyc
 <<<
 >>>
 -1

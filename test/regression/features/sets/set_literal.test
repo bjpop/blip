@@ -1,4 +1,4 @@
-blip set_literal.py && python3.3 set_literal.pyc
+blip -c set_literal.py && python3 set_literal.pyc
 <<<
 >>>
 {1}

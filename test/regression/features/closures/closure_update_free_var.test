@@ -1,4 +1,4 @@
-blip closure_update_free_var.py && python3.3 closure_update_free_var.pyc
+blip -c closure_update_free_var.py && python3 closure_update_free_var.pyc
 <<<
 >>>
 6

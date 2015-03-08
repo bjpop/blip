@@ -1,4 +1,4 @@
-blip floats.py && python3.3 floats.pyc
+blip -c floats.py && python3 floats.pyc
 <<<
 >>>
 0.0

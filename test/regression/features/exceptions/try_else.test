@@ -1,4 +1,4 @@
-blip try_else.py && python3.3 try_else.pyc
+blip -c try_else.py && python3 try_else.pyc
 <<<
 >>>
 else

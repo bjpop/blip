@@ -1,4 +1,4 @@
-blip bool_class.py && python3.3 bool_class.pyc
+blip -c bool_class.py && python3 bool_class.pyc
 <<<
 >>>
 False

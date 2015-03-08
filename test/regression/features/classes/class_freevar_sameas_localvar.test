@@ -1,4 +1,4 @@
-blip class_freevar_sameas_localvar.py && python3.3 class_freevar_sameas_localvar.pyc
+blip -c class_freevar_sameas_localvar.py && python3 class_freevar_sameas_localvar.pyc
 <<<
 >>>
 from f

@@ -1,4 +1,4 @@
-blip while_break.py && python3.3 while_break.pyc
+blip -c while_break.py && python3 while_break.pyc
 <<<
 >>>
 before loop

@@ -1,4 +1,4 @@
-blip with_nested.py && python3.3 with_nested.pyc
+blip -c with_nested.py && python3 with_nested.pyc
 <<<
 >>>
 Entered context

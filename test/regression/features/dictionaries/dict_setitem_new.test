@@ -1,4 +1,4 @@
-blip dict_setitem_new.py && python3.3 dict_setitem_new.pyc
+blip -c dict_setitem_new.py && python3 dict_setitem_new.pyc
 <<<
 >>>
 [('itchy', 'knee'), ('scratchy', 'elbow')]

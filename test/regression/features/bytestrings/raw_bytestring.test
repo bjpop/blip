@@ -1,4 +1,4 @@
-blip raw_bytestring.py && python3.3 raw_bytestring.pyc
+blip -c raw_bytestring.py && python3 raw_bytestring.pyc
 <<<
 >>>
 b'hello \\n world'

@@ -1,4 +1,4 @@
-blip yield.py && python3.3 yield.pyc
+blip -c yield.py && python3 yield.pyc
 <<<
 >>>
 1

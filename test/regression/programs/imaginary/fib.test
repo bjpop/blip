@@ -1,4 +1,4 @@
-blip fib.py; python3.3 fib.pyc
+blip -c fib.py && python3 fib.pyc
 <<<
 >>>
 987

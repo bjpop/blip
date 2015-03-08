@@ -1,4 +1,4 @@
-blip newline.py && python3.3 newline.pyc
+blip -c newline.py && python3 newline.pyc
 <<<
 >>>
 

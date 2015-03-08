@@ -1,4 +1,4 @@
-blip perms.py; python3.3 perms.pyc
+blip -c perms.py && python3 perms.pyc
 <<<
 >>>
 [0, 1, 2, 3]

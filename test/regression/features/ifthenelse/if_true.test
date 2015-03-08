@@ -1,4 +1,4 @@
-blip if_true.py && python3.3 if_true.pyc
+blip -c if_true.py && python3 if_true.pyc
 <<<
 >>>
 1

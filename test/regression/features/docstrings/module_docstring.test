@@ -1,4 +1,4 @@
-blip module_docstring.py && python3.3 module_docstring.pyc
+blip -c module_docstring.py && python3 module_docstring.pyc
 <<<
 >>>
 a doc string

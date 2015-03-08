@@ -1,4 +1,4 @@
-blip slices_list.py && python3.3 slices_list.pyc
+blip -c slices_list.py && python3 slices_list.pyc
 <<<
 >>>
 [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]

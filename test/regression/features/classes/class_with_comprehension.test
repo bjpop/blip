@@ -1,4 +1,4 @@
-blip class_with_comprehension.py && python3.3 class_with_comprehension.pyc
+blip -c class_with_comprehension.py && python3 class_with_comprehension.pyc
 <<<
 >>>
 [1, 2, 3]

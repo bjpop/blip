@@ -1,4 +1,4 @@
-blip lambda_arity0.py && python3.3 lambda_arity0.pyc
+blip -c lambda_arity0.py && python3 lambda_arity0.pyc
 <<<
 >>>
 42

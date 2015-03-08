@@ -1,4 +1,4 @@
-blip inherit_method.py && python3.3 inherit_method.pyc
+blip -c inherit_method.py && python3 inherit_method.pyc
 <<<
 >>>
 from A

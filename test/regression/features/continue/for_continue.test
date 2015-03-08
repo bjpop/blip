@@ -1,4 +1,4 @@
-blip for_continue.py && python3.3 for_continue.pyc
+blip -c for_continue.py && python3 for_continue.pyc
 <<<
 >>>
 before loop

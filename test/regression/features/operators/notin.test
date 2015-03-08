@@ -1,4 +1,4 @@
-blip notin.py && python3.3 notin.pyc
+blip -c notin.py && python3 notin.pyc
 <<<
 >>>
 False

@@ -1,4 +1,4 @@
-blip higher_order.py && python3.3 higher_order.pyc
+blip -c higher_order.py && python3 higher_order.pyc
 <<<
 >>>
 12

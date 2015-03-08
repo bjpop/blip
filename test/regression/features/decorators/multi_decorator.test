@@ -1,4 +1,4 @@
-blip multi_decorator.py && python3.3 multi_decorator.pyc
+blip -c multi_decorator.py && python3 multi_decorator.pyc
 <<<
 >>>
 h called on f

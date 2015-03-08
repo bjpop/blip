@@ -1,4 +1,4 @@
-blip varargs.py && python3.3 varargs.pyc
+blip -c varargs.py && python3 varargs.pyc
 <<<
 >>>
 ()

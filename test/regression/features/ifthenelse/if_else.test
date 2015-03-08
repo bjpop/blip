@@ -1,4 +1,4 @@
-blip if_else.py && python3.3 if_else.pyc
+blip -c if_else.py && python3 if_else.pyc
 <<<
 >>>
 1

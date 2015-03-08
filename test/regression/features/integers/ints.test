@@ -1,4 +1,4 @@
-blip ints.py && python3.3 ints.pyc
+blip -c ints.py && python3 ints.pyc
 <<<
 >>>
 0

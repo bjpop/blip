@@ -1,4 +1,4 @@
-blip class_no_docstring.py && python3.3 class_no_docstring.pyc
+blip -c class_no_docstring.py && python3 class_no_docstring.pyc
 <<<
 >>>
 None

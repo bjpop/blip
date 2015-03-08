@@ -1,4 +1,4 @@
-blip decorator_function.py && python3.3 decorator_function.pyc
+blip -c decorator_function.py && python3 decorator_function.pyc
 <<<
 >>>
 3

@@ -1,4 +1,4 @@
-blip list_multiply.py && python3.3 list_multiply.pyc
+blip -c list_multiply.py && python3 list_multiply.pyc
 <<<
 >>>
 []

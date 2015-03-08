@@ -1,4 +1,4 @@
-blip import.py && python3.3 import.pyc
+blip -c import.py && python3 import.pyc
 <<<
 >>>
 12

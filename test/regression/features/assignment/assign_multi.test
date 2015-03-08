@@ -1,4 +1,4 @@
-blip assign_multi.py && python3.3 assign_multi.pyc
+blip -c assign_multi.py && python3 assign_multi.pyc
 <<<
 >>>
 1 1

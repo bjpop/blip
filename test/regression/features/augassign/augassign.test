@@ -1,4 +1,4 @@
-blip augassign.py && python3.3 augassign.pyc
+blip -c augassign.py && python3 augassign.pyc
 <<<
 >>>
 14

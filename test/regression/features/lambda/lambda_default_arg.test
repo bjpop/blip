@@ -1,4 +1,4 @@
-blip lambda_default_arg.py && python3.3 lambda_default_arg.pyc
+blip -c lambda_default_arg.py && python3 lambda_default_arg.pyc
 <<<
 >>>
 4

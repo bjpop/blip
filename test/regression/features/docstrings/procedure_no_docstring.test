@@ -1,4 +1,4 @@
-blip procedure_no_docstring.py && python3.3 procedure_no_docstring.pyc
+blip -c procedure_no_docstring.py && python3 procedure_no_docstring.pyc
 <<<
 >>>
 None

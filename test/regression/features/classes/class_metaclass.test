@@ -1,4 +1,4 @@
-blip class_metaclass.py && python3.3 class_metaclass.pyc
+blip -c class_metaclass.py && python3 class_metaclass.pyc
 <<<
 >>>
 C () {'__module__' : '__main__', '__qualname__' : 'C'}

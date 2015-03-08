@@ -1,4 +1,4 @@
-blip importTransitive.py && python3.3 importTransitive.pyc
+blip -c importTransitive.py && python3 importTransitive.pyc
 <<<
 >>>
 12

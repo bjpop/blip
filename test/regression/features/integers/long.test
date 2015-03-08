@@ -1,4 +1,4 @@
-blip long.py && python3.3 long.pyc
+blip -c long.py && python3 long.pyc
 <<<
 >>>
 36893488147419103232

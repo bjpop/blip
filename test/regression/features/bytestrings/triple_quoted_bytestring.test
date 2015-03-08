@@ -1,4 +1,4 @@
-blip triple_quoted_bytestring.py && python3.3 triple_quoted_bytestring.pyc
+blip -c triple_quoted_bytestring.py && python3 triple_quoted_bytestring.pyc
 <<<
 >>>
 b'Hello\nWorld'

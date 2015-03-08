@@ -1,4 +1,4 @@
-blip input_no_args.py && python3.3 input_no_args.pyc
+blip -c input_no_args.py && python3 input_no_args.pyc
 <<<
 hello
 >>>
