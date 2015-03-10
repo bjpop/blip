@@ -129,9 +129,13 @@ version =
    , argDesc = "Show the version number of " ++ progName ++ "."
    }
 
--- this works for CPython 3.3.0
+-- this works for CPython 3.4.2
+-- see Python source Lib/importlib/_bootstrap.py
+-- >>> MAGIC_NUMBER = (3310).to_bytes(2, 'little') + b'\r\n'
+-- >>> int.from_bytes(MAGIC_NUMBER, 'little')
+-- 168627438
 defaultMagicNumber :: Int
-defaultMagicNumber = 168627358
+defaultMagicNumber = 168627438
 
 magicNumberArg :: Arg ArgIndex
 magicNumberArg =
