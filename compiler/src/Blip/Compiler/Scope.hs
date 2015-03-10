@@ -530,6 +530,7 @@ instance VarUsage AssignTargets where
       targetUsage expr@(Subscript {..}) = varUsage expr
       targetUsage expr@(BinaryOp{..}) = varUsage expr
       targetUsage expr@(SlicedExpr{..}) = varUsage expr
+      targetUsage expr@(Dot {..}) = varUsage expr 
       targetUsage other = error $ "Unsupported assignTarget: " ++ show other
 
 singleVarSet :: AST.Ident a -> VarSet
