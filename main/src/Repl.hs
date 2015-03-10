@@ -99,7 +99,8 @@ getInputLines = do
            nonEmptyParenStack state -> do
              restLines <- getParenContinueLines state []
              return $ Just $ unlines (line:restLines)
-         | otherwise -> return $ Just line
+         | otherwise -> do
+              return $ Just line
          where
          lexResult = runParser lexer $ lexState line
          noComments = filter (not . isComment)
@@ -110,12 +111,20 @@ isComment _other = False
 
 lastTokenIsColon :: [Token] -> Bool
 lastTokenIsColon [] = False
+lastTokenIsColon tokens = 
+   case (reverse tokens) of
+      -- lexer may insert a newline at the end, we can ignore it
+      (NewlineToken {}: ColonToken {}:_) -> True
+      (ColonToken {}:_) -> True
+      _other -> False
+{-
 lastTokenIsColon tokens =
    isColon $ last tokens
    where
    isColon :: Token -> Bool
    isColon (ColonToken {}) = True
    isColon _other = False
+-}
 
 nonEmptyParenStack :: ParseState -> Bool
 nonEmptyParenStack = not . null . parenStack
