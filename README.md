@@ -100,7 +100,11 @@ cabal install --overwrite-policy=always readpyc
 
 Blip uses shelltestrunner for regression testing. Tests can be run like so:
 
-   make test
+```
+PATH=$HOME/.cabal/bin/:$PATH ~/.cabal/bin/shelltest --color --execdir test/regression -- -j1
+```
+
+Change `-j1` to a higher number if you want to speed up testing and use more CPU cores. For example, use `-j4` to use 4 CPU cores.
 
 Shelltestrunner can be installed from Hackage:
 

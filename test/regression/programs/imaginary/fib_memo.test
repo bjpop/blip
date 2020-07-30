@@ -1,4 +1,4 @@
-blip -c fib_memo.py && python3 fib_memo.pyc
+blip fib_memo.py
 <<<
 >>>
 359579325206583560961765665172189099052367214309267232255589801

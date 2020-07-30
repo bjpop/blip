@@ -1,4 +1,4 @@
-blip -c powerset.py && python3 powerset.pyc
+blip powerset.py
 <<<
 >>>
 []

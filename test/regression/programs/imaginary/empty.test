@@ -1,4 +1,4 @@
-blip -c empty.py && python3 empty.pyc
+blip empty.py
 <<<
 >>>
 >>>2

@@ -1,4 +1,4 @@
-blip -c bottles_of_beer.py && python3 bottles_of_beer.pyc
+blip bottles_of_beer.py
 <<<
 >>>
 99 bottles of beer on the wall,
