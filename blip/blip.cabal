@@ -1,5 +1,5 @@
 Name:                blip
-Version:             0.3.0
+Version:             0.4.0
 Synopsis:            Python bytecode compiler and interpreter.
 Homepage:            https://github.com/bjpop/blip  
 License:             BSD3
@@ -21,23 +21,22 @@ Executable blip {
   ghc-options: -Wall -fno-warn-name-shadowing -fno-warn-orphans
   main-is: Main.hs
   hs-source-dirs: src
-  build-depends: base==4.*,
-     bliplib == 0.3.*,
-     blipcompiler == 0.3.*,
-     blipinterpreter == 0.3.*,
-     haskeline,
-     -- directory == 1.2.*,
-     filepath == 1.3.*,
-     parseargs == 0.1.* ,
-     language-python==0.5.*,
-     mtl==2.1.*,
-     containers==0.5.*,
-     bytestring==0.10.*,
-     old-time==1.1.*,
-     pretty==1.1.*,
-     -- utf8-string==0.3.*
-     MonadCatchIO-mtl==0.3.*
-     -- MonadCatchIO-mtl==0.3.1.0
+  build-depends: base,
+     bliplib          == 0.4.0,
+     blipcompiler     == 0.4.0,
+     blipinterpreter  == 0.4.0,
+     base             >= 4.14.0 && < 4.15,
+     bytestring       >= 0.10.10 && < 0.11,
+     containers       >= 0.6.2 && < 0.7,
+     exceptions       >= 0.10.4 && < 0.11,
+     mtl              >= 2.2.2 && < 2.3,
+     pretty           >= 1.1.3 && < 1.2,
+     filepath         >= 1.4.2 && < 1.5,
+     haskeline        >= 0.8.0 && < 0.9,
+     language-python  >= 0.5.8 && < 0.6,
+     old-time         >= 1.1.0 && < 1.2,
+     parseargs        >= 0.2.0 && < 0.3
   other-modules:
-     ProgName
+     ProgName,
+     Repl
 }

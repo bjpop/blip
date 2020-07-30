@@ -25,7 +25,7 @@ import Blip.Bytecode (Opcode (..), Bytecode (..))
 import Language.Python.Common.AST as AST
    ( ExprSpan, Expr (..), Statement (..), StatementSpan, Ident (..)
    , IdentSpan, Argument (..), ArgumentSpan
-   , YieldArg (..), DictMappingPair (..), DictMappingPairSpan)
+   , YieldArg (..), DictKeyDatumList(DictMappingPair), DictKeyDatumListSpan)
 import Language.Python.Common.SrcLocation (SrcSpan (..))
 import Blip.Compiler.Types (Identifier, ScopeIdentifier, ParameterTypes (..))
 
@@ -179,7 +179,7 @@ mkSet :: [ExprSpan] -> ExprSpan
 mkSet exprs = Set { set_exprs = exprs, expr_annot = SpanEmpty }
 
 -- mkDict :: [(ExprSpan, ExprSpan)] -> ExprSpan
-mkDict :: [DictMappingPairSpan] -> ExprSpan
+mkDict :: [DictKeyDatumListSpan] -> ExprSpan
 mkDict exprs = Dictionary { dict_mappings = exprs, expr_annot = SpanEmpty }
 
 mkMethodCall :: ExprSpan -> String -> ExprSpan -> ExprSpan

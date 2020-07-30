@@ -85,7 +85,7 @@ import Language.Python.Common.AST as AST
    , Comprehension (..), SliceSpan, Slice (..), AssignOpSpan, AssignOp (..)
    , ComprehensionExpr (..), ComprehensionExprSpan
    , ParameterSpan, Parameter (..), RaiseExpr (..), RaiseExprSpan
-   , DictMappingPair (..), YieldArg (..), YieldArgSpan )
+   , DictKeyDatumList(DictMappingPair), YieldArg (..), YieldArgSpan )
 import Language.Python.Common (prettyText)
 import Language.Python.Common.StringEscape (unescapeString)
 import Language.Python.Common.SrcLocation (SrcSpan (..))

@@ -16,8 +16,9 @@ module Blip.Pretty
    , prettyList
    , prettyTuple
    , showBits
-   )where
+   ) where
 
+import Prelude hiding ((<>))
 import Data.Word (Word64, Word32, Word16, Word8)
 import Text.PrettyPrint
 import Data.ByteString.Lazy (ByteString)
@@ -67,7 +68,7 @@ instance Pretty Double where
    pretty = double
 
 instance (Pretty a, Pretty b) => Pretty (a, b) where
-   pretty (x, y) = text "(" <> pretty x <> text "," <+> pretty y <> text ")"
+   pretty (x, y) = text "(" <> pretty x <> text ", " <> pretty y <> text ")"
 
 instance Pretty ByteString where
    pretty = text . unpack

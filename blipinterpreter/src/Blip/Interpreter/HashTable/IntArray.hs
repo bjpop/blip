@@ -20,9 +20,10 @@ module Blip.Interpreter.HashTable.IntArray
 -- import           Control.Monad.ST
 import           Data.Bits
 import qualified Data.Primitive.ByteArray as A
-import           Data.Primitive.Types     (Addr (..))
+-- import           Data.Primitive.Types     (Addr (..))
 import           GHC.Exts
 import           GHC.Word
+import           Data.Word (Word8)
 import           Prelude                  hiding (length)
 -- import           Control.Monad.Primitive (RealWorld)
 ------------------------------------------------------------------------------
@@ -110,7 +111,10 @@ length (IA a) = A.sizeofMutableByteArray a `div` wordSizeInBytes
 
 
 ------------------------------------------------------------------------------
-toPtr :: IntArray -> Ptr a
+toPtr :: IntArray -> Ptr Word8 
+toPtr (IA a) = A.mutableByteArrayContents a 
+{-
 toPtr (IA a) = Ptr a#
   where
     !(Addr !a#) = A.mutableByteArrayContents a
+-}

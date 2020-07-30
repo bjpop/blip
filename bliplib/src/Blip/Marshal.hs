@@ -18,6 +18,7 @@ module Blip.Marshal
    , co_nested, co_generator, co_nofree )
    where
 
+import Prelude hiding ((<>))
 import Blip.MarshalDouble (bytesToDouble, doubleToBytes)
 import Blip.Bytecode (decode, BytecodeSeq (..))
 import Blip.Pretty (Pretty (..), prettyList, prettyTuple)

@@ -1,0 +1,5 @@
+packages: bliplib/
+          blipcompiler/
+          blipinterpreter/
+          blip/
+          readpyc/

@@ -64,7 +64,7 @@ import Language.Python.Common.AST as AST
    , YieldArg (..), YieldArgSpan
    , Parameter (..), Op (..), Comprehension (..), ComprehensionSpan
    , ComprehensionExpr (..), ComprehensionExprSpan
-   , DictMappingPair (..), DictMappingPairSpan
+   , DictKeyDatumList(..), DictKeyDatumListSpan
    , CompIter (..), CompIterSpan, CompFor (..), CompForSpan, CompIf (..)
    , CompIfSpan, Handler (..), HandlerSpan, ExceptClause (..), ExceptClauseSpan  )
 import Data.Monoid (Monoid (..))
@@ -315,6 +315,15 @@ parseParameterTypes = parseAcc [] Nothing Nothing
          VarArgsKeyword {..} -> parseAcc pos varPos (Just $ fromIdentString param_name) rest
          _other -> parseAcc pos varPos varKeyword rest
 
+instance Semigroup Usage where
+   x <> y
+      = Usage
+        { usage_assigned = usage_assigned x `mappend` usage_assigned y
+        , usage_nonlocals = usage_nonlocals x `mappend` usage_nonlocals y
+        , usage_referenced = usage_referenced x `mappend` usage_referenced y
+        , usage_globals = usage_globals x `mappend` usage_globals y
+        , usage_definitions = usage_definitions x `mappend` usage_definitions y }
+
 instance Monoid Usage where
    mempty = Usage
                { usage_assigned = Set.empty
@@ -322,13 +331,12 @@ instance Monoid Usage where
                , usage_globals = Set.empty
                , usage_referenced = Set.empty
                , usage_definitions = [] }
-   mappend x y
-      = Usage
-        { usage_assigned = usage_assigned x `mappend` usage_assigned y
-        , usage_nonlocals = usage_nonlocals x `mappend` usage_nonlocals y
-        , usage_referenced = usage_referenced x `mappend` usage_referenced y
-        , usage_globals = usage_globals x `mappend` usage_globals y
-        , usage_definitions = usage_definitions x `mappend` usage_definitions y }
+
+instance Semigroup ParameterTypes where 
+   (ParameterTypes pos1 varPos1 varKeyword1) <> (ParameterTypes pos2 varPos2 varKeyword2)
+      = ParameterTypes (pos1 `mappend` pos2)
+                       (varPos1 `mappend` varPos2)
+                       (varKeyword1 `mappend` varKeyword2)
 
 instance Monoid ParameterTypes where
    mempty =
@@ -337,12 +345,6 @@ instance Monoid ParameterTypes where
       , parameterTypes_varPos = Nothing
       , parameterTypes_varKeyword = Nothing
       }
-
-   mappend (ParameterTypes pos1 varPos1 varKeyword1)
-           (ParameterTypes pos2 varPos2 varKeyword2)
-      = ParameterTypes (pos1 `mappend` pos2)
-                       (varPos1 `mappend` varPos2)
-                       (varKeyword1 `mappend` varKeyword2)
 
 -- determine the set of variables which are either assigned to or explicitly
 -- declared global or nonlocal in the current scope.
@@ -507,9 +509,10 @@ instance VarUsage CompIfSpan where
       varUsage comp_if `mappend`
       varUsage comp_if_iter
 
-instance VarUsage DictMappingPairSpan where
+instance VarUsage DictKeyDatumListSpan where
    varUsage (DictMappingPair e1 e2) =
       varUsage e1 `mappend` varUsage e2
+   varUsage (DictUnpacking e) = varUsage e
 
 newtype AssignTargets = AssignTargets [ExprSpan]
 
