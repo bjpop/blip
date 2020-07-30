@@ -1,4 +1,4 @@
-blip evenodd.py
+blip -c evenodd.py && python3 evenodd.pyc
 <<<
 >>>
 True
