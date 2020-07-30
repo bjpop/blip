@@ -1,7 +1,8 @@
 # Blip, a bytecode compiler and interpreter for Python 3 
 
 Blip compiles Python 3 source files to bytecode. The output bytecode
-is compatible with the CPython interpreter.
+is compatible with the [CPython](https://github.com/python/cpython) interpreter - 
+the reference, and most commonly used, Python implementation.
 
 For example, given a Python 3 source file called foo.py, the command:
 
